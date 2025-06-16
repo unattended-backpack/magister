@@ -1,6 +1,8 @@
 mod config;
 mod http_handler;
+mod instance_controller;
 mod types;
+mod vast;
 
 use anyhow::{Context, Result};
 pub use config::Config;
@@ -20,7 +22,7 @@ async fn main() -> Result<()> {
 
     let config: Config = toml::de::from_str(&config).context("parse config")?;
 
-    let state = Arc::new(MagisterState::new(config.clone()));
+    let state = Arc::new(MagisterState::new(config.clone()).await);
 
     // Create the axum router with all routes
     let app = http_handler::create_router(state);
