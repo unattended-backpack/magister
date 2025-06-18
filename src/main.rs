@@ -4,11 +4,12 @@ mod instance_controller;
 mod types;
 mod vast;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 pub use config::Config;
-use log::info;
+use config::VastQueryConfig;
+use log::{error, info};
 use std::{net::SocketAddr, sync::Arc};
-pub use types::MagisterState;
+use types::{MagisterState, VAST_BASE_URL, VAST_OFFERS_ENDPOINT, VastOfferResponse};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,6 +22,17 @@ async fn main() -> Result<()> {
         .context("read magister.toml file")?;
 
     let config: Config = toml::de::from_str(&config).context("parse config")?;
+
+    // match validate_query(config.clone()).await {
+    //     Ok(_) => {
+    //         info!("Query validated");
+    //     }
+    //     Err(e) => {
+    //         error!("Error validating query: {e}");
+    //         error!("Couldn't execute query. Shutting down.");
+    //         return Ok(());
+    //     }
+    // }
 
     let state = Arc::new(MagisterState::new(config.clone()).await);
 
@@ -47,3 +59,38 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+// async fn validate_query(config: Config) -> Result<()> {
+//     let query = config.vast_query.to_json_query_string();
+//     info!("Validating query...\n{query}");
+//
+//     let url = format!("{}{}", VAST_BASE_URL, VAST_OFFERS_ENDPOINT);
+//
+//     let client = reqwest::Client::new();
+//     let response = client
+//         .get(&url)
+//         .header("Accept", "application/json")
+//         .header("Content-Type", "application/json")
+//         .header("Authorization", format!("Bearer {}", config.vast_api_key))
+//         .json(&query)
+//         .send()
+//         .await?;
+//
+//     if response.status().is_success() {
+//         let vast_response: VastOfferResponse = response.json().await?;
+//         let num_offers = vast_response.offers.len();
+//         if num_offers > 0 {
+//             Ok(())
+//         } else {
+//             Err(anyhow!(
+//                 "Reponse returned 0 vast offers.  Change the query to return more"
+//             ))
+//         }
+//     } else {
+//         let status = response.status();
+//         let error_text = response.text().await.unwrap();
+//         Err(anyhow!(
+//             "Error in response: status = {status}, {error_text}"
+//         ))
+//     }
+// }

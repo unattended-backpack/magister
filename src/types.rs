@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{config::Config, vast::VastClient};
 
-pub const VAST_BASE_URL: &str = "https://console.vast.ai/api/v0";
+pub const VAST_BASE_URL: &str = "https://cloud.vast.ai/api/v0";
+pub const VAST_OFFERS_ENDPOINT: &str = "/bundles";
 
 #[derive(Clone)]
 pub struct MagisterState {
@@ -29,13 +30,12 @@ pub struct VastOfferResponse {
 pub struct VastInstance {
     mins_alive: u64,
 }
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Offer {
     pub id: u64,
     pub ask_contract_id: u64,
     pub bundle_id: u64,
-    pub bundled_results: Option<serde_json::Value>,
+    pub bundled_results: Option<u64>,
     pub bw_nvlink: f64,
     pub compute_cap: u32,
     pub cpu_arch: String,
@@ -85,7 +85,7 @@ pub struct Offer {
     pub logo: String,
     pub machine_id: u64,
     pub min_bid: f64,
-    pub mobo_name: String,
+    pub mobo_name: Option<String>,
     pub num_gpus: u32,
     pub os_version: String,
     pub pci_gen: f64,
@@ -110,36 +110,25 @@ pub struct Offer {
     pub is_vm_deverified: bool,
     pub resource_type: String,
     pub cluster_id: Option<serde_json::Value>,
+    pub avail_vol_ask_id: Option<u64>,
+    pub avail_vol_dph: Option<f64>,
+    pub avail_vol_size: Option<f64>,
     pub rn: u32,
     pub dph_total_adj: f64,
     pub reliability2: f64,
     pub discount_rate: Option<f64>,
     pub discounted_hourly: f64,
     pub discounted_dph_total: f64,
-    pub search: SearchInfo,
-    pub instance: InstanceInfo,
+    pub search: CostBreakdown,
+    pub instance: CostBreakdown,
     pub time_remaining: String,
     pub time_remaining_isbid: String,
     pub internet_up_cost_per_tb: f64,
     pub internet_down_cost_per_tb: f64,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct SearchInfo {
-    #[serde(rename = "gpuCostPerHour")]
-    pub gpu_cost_per_hour: f64,
-    #[serde(rename = "diskHour")]
-    pub disk_hour: f64,
-    #[serde(rename = "totalHour")]
-    pub total_hour: f64,
-    #[serde(rename = "discountTotalHour")]
-    pub discount_total_hour: f64,
-    #[serde(rename = "discountedTotalPerHour")]
-    pub discounted_total_per_hour: f64,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct InstanceInfo {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CostBreakdown {
     #[serde(rename = "gpuCostPerHour")]
     pub gpu_cost_per_hour: f64,
     #[serde(rename = "diskHour")]

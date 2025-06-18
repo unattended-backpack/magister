@@ -9,7 +9,12 @@ use axum::{
 use log::info;
 use std::sync::Arc;
 
-use crate::types::{MagisterState, Offer, VAST_BASE_URL, VastInstance, VastOfferResponse};
+use crate::{
+    types::{
+        MagisterState, Offer, VAST_BASE_URL, VAST_OFFERS_ENDPOINT, VastInstance, VastOfferResponse,
+    },
+    vast::VastClient,
+};
 
 pub fn create_router(state: Arc<MagisterState>) -> Router {
     Router::new()
@@ -27,22 +32,54 @@ async fn hello_world(State(state): State<Arc<MagisterState>>) -> impl IntoRespon
 async fn find_offers(
     State(state): State<Arc<MagisterState>>,
 ) -> Result<axum::Json<VastOfferResponse>, StatusCode> {
-    let url = format!("{}/search/asks/", VAST_BASE_URL);
-    let query = state.config.vast_config.query.clone();
-    info!("Query: {query}");
+    let query = state.config.vast_query.to_query_string();
+    let url = format!("{}{}/?q={}", VAST_BASE_URL, VAST_OFFERS_ENDPOINT, query);
+    info!("url:\n{url}");
 
     let client = reqwest::Client::new();
     let response = client
-        .put(&url)
+        .get(&url)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
-        .json(&query)
+        .header(
+            "Authorization",
+            format!("Bearer {}", state.config.vast_api_key),
+        )
+        //.json(&query)
         .send()
         .await
         .unwrap();
 
     if response.status().is_success() {
-        let vast_response = response.json().await.unwrap();
+        let response_text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                panic!("Error reading response body: {e}");
+            }
+        };
+        let vast_response: VastOfferResponse = match serde_json::from_str(&response_text) {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("Raw response body: {}", response_text);
+                eprintln!("Deserialization error: {}", e);
+                panic!("Error deserializing response as json: {e}");
+            }
+        };
+        // let vast_response: VastOfferResponse = match response.json().await {
+        //     Ok(resp) => resp,
+        //     Err(e) => {
+        //         panic!("Error deserializing response as json: {e}");
+        //     }
+        // };
+        info!("Found {} offers", vast_response.offers.len());
+        let offers = VastClient::filter_out(state.config.clone(), vast_response.offers);
+        for offer in &offers {
+            info!(
+                "{}: {} {:.2}",
+                offer.geolocation, offer.gpu_name, offer.dph_total
+            );
+        }
+        let vast_response = VastOfferResponse { offers };
         Ok(axum::Json(vast_response))
     } else {
         let status = response.status();

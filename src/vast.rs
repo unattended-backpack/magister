@@ -1,24 +1,22 @@
 use crate::{
-    config::VastConfig,
+    config::Config,
     types::{Offer, VAST_BASE_URL, VastInstance},
 };
 use anyhow::{Result, anyhow};
 use log::info;
 
 pub struct VastClient {
-    template_id: String,
-    config: VastConfig,
+    config: Config,
     client: reqwest::Client,
     base_url: String,
 }
 
 impl VastClient {
-    pub fn new(template_id: String, vast_config: VastConfig) -> Self {
+    pub fn new(config: Config) -> Self {
         let client = reqwest::Client::new();
         let base_url = VAST_BASE_URL.to_string();
         Self {
-            template_id,
-            config: vast_config,
+            config,
             client,
             base_url,
         }
@@ -34,7 +32,8 @@ impl VastClient {
 
     async fn find_offers(&self) -> Result<Vec<Offer>> {
         let url = format!("{}/search/asks/", self.base_url);
-        let query = self.config.query.clone();
+        let query = self.config.vast_query.to_query_string();
+
         info!("Query: {query}");
 
         let response = self
@@ -58,5 +57,31 @@ impl VastClient {
                 error_text
             ))
         }
+    }
+
+    pub fn filter_out(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
+        info!("Num offers before filter: {}", offers.len());
+
+        let bad_hosts = config.bad_hosts;
+        let bad_machines = config.bad_machines;
+
+        let offers: Vec<Offer> = offers
+            .into_iter()
+            .filter(|offer| {
+                let host_ok = bad_hosts
+                    .as_ref()
+                    .map_or(true, |bad_list| !bad_list.contains(&offer.host_id));
+
+                let machine_ok = bad_machines
+                    .as_ref()
+                    .map_or(true, |bad_list| !bad_list.contains(&offer.machine_id));
+
+                host_ok && machine_ok
+            })
+            .collect();
+
+        info!("Num offers after filter: {}", offers.len());
+
+        offers
     }
 }

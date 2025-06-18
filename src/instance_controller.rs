@@ -18,7 +18,7 @@ pub struct InstanceControllerClient {
 
 impl InstanceControllerClient {
     pub async fn new(config: Config) -> Self {
-        let vast_client = VastClient::new(config.template_id.clone(), config.vast_config.clone());
+        let vast_client = VastClient::new(config.clone());
         let desired_instances = config.number_instances;
         // TODO: request <desired_instances> of <template>
 
