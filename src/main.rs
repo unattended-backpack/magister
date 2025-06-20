@@ -6,10 +6,11 @@ mod vast;
 
 use anyhow::{Context, Result, anyhow};
 pub use config::Config;
-use config::VastQueryConfig;
 use log::{error, info};
 use std::{net::SocketAddr, sync::Arc};
-use types::{MagisterState, VAST_BASE_URL, VAST_OFFERS_ENDPOINT, VastOfferResponse};
+use tokio::time::Instant;
+use types::MagisterState;
+use vast::VastClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,18 +24,23 @@ async fn main() -> Result<()> {
 
     let config: Config = toml::de::from_str(&config).context("parse config")?;
 
-    // match validate_query(config.clone()).await {
-    //     Ok(_) => {
-    //         info!("Query validated");
-    //     }
-    //     Err(e) => {
-    //         error!("Error validating query: {e}");
-    //         error!("Couldn't execute query. Shutting down.");
-    //         return Ok(());
-    //     }
-    // }
+    // validate query.  Exit on query error or 0 (or less than desired instances) results returned
+    match validate_query(config.clone()).await {
+        Ok(_) => {
+            info!("Query validated");
+        }
+        Err(e) => {
+            error!("Error validating query: {e}");
+            error!("Couldn't validate query. Shutting down.");
+            return Ok(());
+        }
+    }
 
-    let state = Arc::new(MagisterState::new(config.clone()).await);
+    let state = Arc::new(
+        MagisterState::new(config.clone())
+            .await
+            .context("Create MagisterState")?,
+    );
 
     // Create the axum router with all routes
     let app = http_handler::create_router(state);
@@ -60,37 +66,28 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-// async fn validate_query(config: Config) -> Result<()> {
-//     let query = config.vast_query.to_json_query_string();
-//     info!("Validating query...\n{query}");
-//
-//     let url = format!("{}{}", VAST_BASE_URL, VAST_OFFERS_ENDPOINT);
-//
-//     let client = reqwest::Client::new();
-//     let response = client
-//         .get(&url)
-//         .header("Accept", "application/json")
-//         .header("Content-Type", "application/json")
-//         .header("Authorization", format!("Bearer {}", config.vast_api_key))
-//         .json(&query)
-//         .send()
-//         .await?;
-//
-//     if response.status().is_success() {
-//         let vast_response: VastOfferResponse = response.json().await?;
-//         let num_offers = vast_response.offers.len();
-//         if num_offers > 0 {
-//             Ok(())
-//         } else {
-//             Err(anyhow!(
-//                 "Reponse returned 0 vast offers.  Change the query to return more"
-//             ))
-//         }
-//     } else {
-//         let status = response.status();
-//         let error_text = response.text().await.unwrap();
-//         Err(anyhow!(
-//             "Error in response: status = {status}, {error_text}"
-//         ))
-//     }
-// }
+async fn validate_query(config: Config) -> Result<()> {
+    info!("Validating query...");
+    let vast_client = VastClient::new(config.clone());
+    let start = Instant::now();
+    let offers = vast_client.find_offers().await?;
+
+    if offers.len() == 0 {
+        Err(anyhow!(
+            "query returned 0 offers. Query might be incorrectly constructed or too strict"
+        ))
+    } else if offers.len() < config.number_instances {
+        Err(anyhow!(
+            "Query returned {} instance offers but this Magister is configured to run {} instances. Loosen the restrictions on the query to return more results.",
+            offers.len(),
+            config.number_instances
+        ))
+    } else {
+        info!(
+            "Validation query returned {} offers in {:.2} seconds",
+            offers.len(),
+            start.elapsed().as_secs_f32()
+        );
+        Ok(())
+    }
+}

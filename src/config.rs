@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -8,9 +8,11 @@ pub struct Config {
     pub vast_config: VastConfig,
     pub vast_query: VastQueryConfig,
     pub vast_api_key: String,
+    #[serde(default = "default_task_polling_interval_secs")]
+    pub task_polling_interval_secs: u64,
     // Id of the template that magister will be making instances of.
     // Find the id at the Vast.ai web console
-    pub template_id: String,
+    pub template_hash_id: String,
     // how many instances of the template this Magister will make sure are allocated
     pub number_instances: usize,
     // Won't use a machine if its in bad_hosts OR bad_machines
@@ -19,6 +21,10 @@ pub struct Config {
     // Will prioritize a machine if its in good_hosts OR good_machines
     pub good_hosts: Option<Vec<u64>>,
     pub good_machines: Option<Vec<u64>>,
+}
+
+fn default_task_polling_interval_secs() -> u64 {
+    30
 }
 
 fn default_http_port() -> u16 {
