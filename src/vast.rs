@@ -3,28 +3,22 @@ use std::time::Duration;
 use crate::{
     config::Config,
     types::{
-        Offer, Template, TemplateResponse, VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT,
-        VAST_DELETE_INSTANCE_ENDPOINT, VAST_OFFERS_ENDPOINT, VAST_TEMPLATE_INFORMATION_ENDPOINT,
-        VastCreateInstanceResponse, VastInstance, VastOfferResponse,
+        Offer, VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, VAST_DELETE_INSTANCE_ENDPOINT,
+        VAST_OFFERS_ENDPOINT, VastCreateInstanceResponse, VastInstance, VastOfferResponse,
     },
 };
 use anyhow::{Context, Result, anyhow};
-use log::{info, warn};
+use log::{debug, info, warn};
 
 pub struct VastClient {
     config: Config,
     client: reqwest::Client,
-    new_instance_json_args: String,
 }
 
 impl VastClient {
-    pub fn new(config: Config, new_instance_json_args: String) -> Self {
+    pub fn new(config: Config) -> Self {
         let client = reqwest::Client::new();
-        Self {
-            config,
-            client,
-            new_instance_json_args,
-        }
+        Self { config, client }
     }
 
     pub async fn create_instances(&self, count: usize) -> Result<Vec<(u64, VastInstance)>> {
@@ -43,7 +37,10 @@ impl VastClient {
                 offers.len(),
                 count
             );
+        } else {
+            info!("Query returned {} offers", offers.len());
         }
+
         for offer in offers {
             tokio::time::sleep(Duration::from_secs(self.config.vast_api_call_delay_secs)).await;
             let offer_id = offer.id;
@@ -137,7 +134,7 @@ impl VastClient {
 
         if response.status().is_success() {
             let vast_response: VastOfferResponse = response.json().await?;
-            info!("Found {} offers", vast_response.offers.len());
+            debug!("Found {} offers", vast_response.offers.len());
             Ok(vast_response.offers)
         } else {
             let status = response.status();
@@ -155,10 +152,28 @@ impl VastClient {
             "{}{}/{}/",
             VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
         );
-        let body = self.new_instance_json_args;
+        // unfortunately these all have to be passed in as null
+        let body = format!(
+            r#"{{
+            "template_id": null,
+            "template_hash_id": "{}",
+            "client_id": null,
+            "image": null,
+            "env": null,
+            "args_str": null,
+            "onstart": null,
+            "runtype": null,
+            "image_login": null,
+            "use_jupyter_lab": false,
+            "jupyter_dir": null,
+            "python_utf8": null,
+            "lang_utf8": null,
+            "label": "magister",
+            "disk": {}
+        }}"#,
+            self.config.template_hash, self.config.vast_query.disk_space
+        );
 
-        // TODO: remove this print
-        info!("new instance query:\n{url} body: {body}");
         let response = self
             .client
             .put(&url)
@@ -168,7 +183,7 @@ impl VastClient {
                 "Authorization",
                 format!("Bearer {}", self.config.vast_api_key),
             )
-            .json(&body)
+            .body(body.clone())
             .send()
             .await?;
         if response.status().is_success() {
@@ -185,7 +200,7 @@ impl VastClient {
 }
 
 fn filter_offers(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
-    info!("Num offers before filter: {}", offers.len());
+    let count_before_filter = offers.len();
 
     let bad_hosts = config.bad_hosts;
     let bad_machines = config.bad_machines;
@@ -205,7 +220,11 @@ fn filter_offers(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
         })
         .collect();
 
-    info!("Num offers after filter: {}", offers.len());
+    let count_after_filter = offers.len();
+    debug!(
+        "Filtered out {} offers",
+        count_before_filter - count_after_filter
+    );
 
     offers
 }

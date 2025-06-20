@@ -9,7 +9,6 @@ pub const VAST_BASE_URL: &str = "https://console.vast.ai/api/v0";
 pub const VAST_OFFERS_ENDPOINT: &str = "/bundles";
 pub const VAST_CREATE_INSTANCE_ENDPOINT: &str = "/asks";
 pub const VAST_DELETE_INSTANCE_ENDPOINT: &str = "/instances";
-pub const VAST_TEMPLATE_INFORMATION_ENDPOINT: &str = "/template";
 
 #[derive(Clone)]
 pub struct MagisterState {
@@ -52,7 +51,7 @@ impl fmt::Display for VastInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "instance_id {}: {} in {} machine_id {} host_id {} for ${:.2}/hour",
+            "instance_id {}: {} in {} machine_id {} host_id {} ${:.2}/hour",
             self.instance_id,
             self.offer.gpu_name,
             self.offer.geolocation,
@@ -216,61 +215,4 @@ pub struct CostBreakdown {
     pub discount_total_hour: f64,
     #[serde(rename = "discountedTotalPerHour")]
     pub discounted_total_per_hour: f64,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct TemplateResponse {
-    pub success: bool,
-    pub templates_found: u32,
-    pub templates: Vec<Template>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Template {
-    pub id: u64,
-    pub creator_id: u64,
-    pub args_str: String,
-    pub command: Option<String>,
-    pub default_tag: Option<String>,
-    pub desc: String,
-    pub docker_login_repo: String,
-    pub docker_login_user: String,
-    pub docker_login_pass: String,
-    pub env: String,
-    pub extra_filters: String,
-    pub href: String,
-    pub image: String,
-    pub jupyter_dir: Option<String>,
-    pub jup_direct: bool,
-    pub jupyter_tested: Option<bool>,
-    pub jupyterlab_tested: Option<bool>,
-    pub max_cuda: Option<String>,
-    pub min_cuda: Option<String>,
-    pub onstart: String,
-    pub python_utf8: Option<bool>,
-    pub lang_utf8: Option<bool>,
-    pub repo: String,
-    pub runtype: String,
-    pub ssh_direct: bool,
-    pub tag: String,
-    pub use_jupyter_lab: bool,
-    pub use_ssh: bool,
-    pub hash_id: String,
-    pub name: String,
-    pub created_from: Option<String>,
-    pub created_from_id: u64,
-    pub count_created: u32,
-    pub desc_count: u32,
-    pub recent_create_date: f64,
-    pub created_at: f64,
-    pub deleted_at: Option<f64>,
-    pub private: bool,
-    pub readme_visible: bool,
-    pub readme_hash: Option<String>,
-    pub recommended_disk_space: f64,
-    pub recommended: bool,
-    pub cached: bool,
-    pub autoscaler: bool,
-    pub vm: bool,
-    pub sort_order: Option<u32>,
 }

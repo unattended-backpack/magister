@@ -5,7 +5,7 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get},
 };
-use log::error;
+use log::{error, info};
 use std::sync::Arc;
 
 use crate::types::{MagisterState, VastInstance};
@@ -18,7 +18,7 @@ pub fn create_router(state: Arc<MagisterState>) -> Router {
         .with_state(state)
 }
 
-async fn hello_world(State(_state): State<Arc<MagisterState>>) -> impl IntoResponse {
+async fn hello_world() -> impl IntoResponse {
     format!("Hello world!")
 }
 
@@ -37,6 +37,7 @@ async fn instances(
 async fn drop(
     State(state): State<Arc<MagisterState>>,
     Path(id): Path<String>,
+    body: Option<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let instance_id: u64 = match id.parse() {
         Ok(id) => id,
@@ -45,8 +46,18 @@ async fn drop(
             return Err(StatusCode::BAD_REQUEST);
         }
     };
+
+    match body {
+        Some(reason) => {
+            info!("Received request to drop {instance_id} with reason: {reason}");
+        }
+        None => {
+            info!("Received request to drop {instance_id}");
+        }
+    }
+
     match state.instance_controller_client.drop(instance_id).await {
-        Ok(_) => Ok(format!("Dropped instance {id}")),
+        Ok(resp) => resp,
         Err(e) => {
             error!("Error getting instances: {e}");
             Err(StatusCode::INTERNAL_SERVER_ERROR)

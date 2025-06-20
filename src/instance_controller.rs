@@ -1,7 +1,8 @@
 use crate::{config::Config, types::VastInstance, vast::VastClient};
 use anyhow::{Context, Result};
-use log::{error, info, warn};
-use std::collections::HashMap;
+use axum::http::StatusCode;
+use log::{debug, error, info, warn};
+use std::collections::{HashMap, HashSet};
 use tokio::{
     sync::{mpsc, oneshot},
     time::{Duration, Instant, interval},
@@ -27,11 +28,17 @@ impl InstanceControllerClient {
         Ok(Self { sender })
     }
 
-    pub async fn drop(&self, instance_id: u64) -> Result<()> {
-        let command = InstanceControllerCommand::Drop { instance_id };
+    pub async fn drop(&self, instance_id: u64) -> Result<Result<String, StatusCode>> {
+        let (resp_sender, receiver) = oneshot::channel();
+        let command = InstanceControllerCommand::Drop {
+            instance_id,
+            resp_sender,
+        };
         self.sender.send(command).await?;
 
-        Ok(())
+        let resp = receiver.await?;
+
+        Ok(resp)
     }
 
     pub async fn instances(&self) -> Result<Vec<VastInstance>> {
@@ -53,7 +60,7 @@ impl InstanceControllerClient {
 pub struct InstanceController {
     // mapping instance_id -> instance
     instances: HashMap<u64, VastInstance>,
-    instances_to_drop: Vec<VastInstance>,
+    instances_to_drop: HashSet<u64>,
     vast_client: VastClient,
     receiver: mpsc::Receiver<InstanceControllerCommand>,
     config: Config,
@@ -74,7 +81,7 @@ impl InstanceController {
             .await
             .context("Initial instance creation")?;
         let instances = instances.into_iter().collect();
-        let instances_to_drop = Vec::new();
+        let instances_to_drop = HashSet::new();
 
         let elapsed = start.elapsed().as_secs_f32();
         info!(
@@ -113,15 +120,11 @@ impl InstanceController {
 
         // handles all tasks and holds state
         while let Some(command) = self.receiver.recv().await {
-            let start = Instant::now();
-            let command_string = format!("{:?}", command);
             match command {
                 InstanceControllerCommand::HandleUnfinishedBusiness => {
-                    let mut instances_still_not_dropped = Vec::new();
+                    let mut instances_still_not_dropped = HashSet::new();
 
-                    for instance in &self.instances_to_drop {
-                        let instance_id = instance.instance_id;
-
+                    for instance_id in &self.instances_to_drop {
                         // TODO: can remove this when we're sure the logic is fine
                         if let None = self.instances.get(&instance_id) {
                             info!("Instances: {:?}", self.instances);
@@ -147,9 +150,9 @@ impl InstanceController {
                             }
                             Err(e) => {
                                 warn!(
-                                    "Error on attempt to drop {instance}.  Will try again later. {e}"
+                                    "Error on attempt to drop {instance_id}.  Will try again later. {e}"
                                 );
-                                instances_still_not_dropped.push(instance.clone());
+                                instances_still_not_dropped.insert(instance_id.clone());
                             }
                         }
 
@@ -163,18 +166,28 @@ impl InstanceController {
 
                     self.ensure_sufficient_instances().await;
                 }
-                InstanceControllerCommand::Drop { instance_id } => {
-                    match self.instances.get(&instance_id) {
-                        Some(i) => {
-                            self.instances_to_drop.push(i.clone());
+                InstanceControllerCommand::Drop {
+                    instance_id,
+                    resp_sender,
+                } => {
+                    let resp = match self.instances.get(&instance_id) {
+                        Some(_) => {
+                            debug!("Marking {instance_id} to be dropped");
+                            self.instances_to_drop.insert(instance_id);
+                            Ok(format!("{instance_id} will be dropped"))
                         }
                         None => {
                             warn!(
                                 "Attempted to drop instance_id {instance_id} but it isn't known to this magister.  Skipping request."
                             );
-                            continue;
+                            Err(StatusCode::BAD_REQUEST)
                         }
                     };
+
+                    if let Err(_) = resp_sender.send(resp) {
+                        error!("Drop response receiver out of scope.  Exiting");
+                        break;
+                    }
                 }
                 InstanceControllerCommand::GetAll { resp_sender } => {
                     if let Err(_) = resp_sender.send(self.instances.clone()) {
@@ -183,11 +196,6 @@ impl InstanceController {
                     }
                 }
             }
-            let secs = start.elapsed().as_secs_f64();
-            info!(
-                "Took {} seconds to process instance_controller command {:?}",
-                secs, command_string
-            );
         }
 
         Ok(())
@@ -195,14 +203,13 @@ impl InstanceController {
 
     // requests new instances if we're below config.number_instances
     async fn ensure_sufficient_instances(&mut self) {
-        info!(
-            "Currently at {} / {} instances",
-            self.instances.len(),
-            self.config.number_instances
-        );
-
         if self.instances.len() < self.config.number_instances {
             let required_instances = self.config.number_instances - self.instances.len();
+            info!(
+                "Currently at {} / {} instances",
+                self.instances.len(),
+                self.config.number_instances
+            );
 
             let new_instances = match self
                 .vast_client
@@ -234,6 +241,7 @@ impl InstanceController {
 pub enum InstanceControllerCommand {
     Drop {
         instance_id: u64,
+        resp_sender: oneshot::Sender<Result<String, StatusCode>>,
     },
     GetAll {
         resp_sender: oneshot::Sender<HashMap<u64, VastInstance>>,
