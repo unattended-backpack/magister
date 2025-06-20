@@ -5,14 +5,17 @@ use std::fmt::Write;
 pub struct Config {
     #[serde(default = "default_http_port")]
     pub http_port: u16,
-    pub vast_config: VastConfig,
     pub vast_query: VastQueryConfig,
     pub vast_api_key: String,
+    // how many seconds to wait between each vast api call so we don't get rate limited
+    // TODO: have a backoff
+    #[serde(default = "default_vast_api_cal_delay_secs")]
+    pub vast_api_call_delay_secs: u64,
     #[serde(default = "default_task_polling_interval_secs")]
     pub task_polling_interval_secs: u64,
     // Id of the template that magister will be making instances of.
     // Find the id at the Vast.ai web console
-    pub template_hash_id: String,
+    pub template_hash: String,
     // how many instances of the template this Magister will make sure are allocated
     pub number_instances: usize,
     // Won't use a machine if its in bad_hosts OR bad_machines
@@ -23,6 +26,10 @@ pub struct Config {
     pub good_machines: Option<Vec<u64>>,
 }
 
+fn default_vast_api_cal_delay_secs() -> u64 {
+    2
+}
+
 fn default_task_polling_interval_secs() -> u64 {
     30
 }
@@ -30,9 +37,6 @@ fn default_task_polling_interval_secs() -> u64 {
 fn default_http_port() -> u16 {
     8555
 }
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct VastConfig {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VastQueryConfig {

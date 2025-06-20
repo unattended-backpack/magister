@@ -152,6 +152,11 @@ impl InstanceController {
                                 instances_still_not_dropped.push(instance.clone());
                             }
                         }
+
+                        tokio::time::sleep(Duration::from_secs(
+                            self.config.vast_api_call_delay_secs,
+                        ))
+                        .await;
                     }
 
                     self.instances_to_drop = instances_still_not_dropped;

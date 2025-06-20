@@ -1,8 +1,11 @@
+use std::time::Duration;
+
 use crate::{
     config::Config,
     types::{
-        Offer, VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, VAST_DELETE_INSTANCE_ENDPOINT,
-        VAST_OFFERS_ENDPOINT, VastCreateInstanceResponse, VastInstance, VastOfferResponse,
+        Offer, Template, TemplateResponse, VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT,
+        VAST_DELETE_INSTANCE_ENDPOINT, VAST_OFFERS_ENDPOINT, VAST_TEMPLATE_INFORMATION_ENDPOINT,
+        VastCreateInstanceResponse, VastInstance, VastOfferResponse,
     },
 };
 use anyhow::{Context, Result, anyhow};
@@ -11,12 +14,17 @@ use log::{info, warn};
 pub struct VastClient {
     config: Config,
     client: reqwest::Client,
+    new_instance_json_args: String,
 }
 
 impl VastClient {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, new_instance_json_args: String) -> Self {
         let client = reqwest::Client::new();
-        Self { config, client }
+        Self {
+            config,
+            client,
+            new_instance_json_args,
+        }
     }
 
     pub async fn create_instances(&self, count: usize) -> Result<Vec<(u64, VastInstance)>> {
@@ -29,7 +37,7 @@ impl VastClient {
         let offers = self.find_offers().await?;
         if offers.len() == 0 {
             warn!("Query returned 0 offers.");
-        } else if offers.len() > count {
+        } else if offers.len() < count {
             warn!(
                 "Query only returned {} offers but {} instances were requested.  Try restarting with a less strict query parameters to return more results",
                 offers.len(),
@@ -37,6 +45,7 @@ impl VastClient {
             );
         }
         for offer in offers {
+            tokio::time::sleep(Duration::from_secs(self.config.vast_api_call_delay_secs)).await;
             let offer_id = offer.id;
 
             match self.request_new_instance(offer_id).await {
@@ -47,8 +56,12 @@ impl VastClient {
                 }
                 Err(e) => {
                     warn!(
-                        "Unable to request offer {offer_id} of a {} in {} with machine_id {} and host_id {}.\nError: {e}",
-                        offer.gpu_name, offer.geolocation, offer.machine_id, offer.host_id
+                        "Unable to request offer {offer_id} of a {} in {} with machine_id {} and host_id {} for ${:.2}/hour.\nError: {e}",
+                        offer.gpu_name,
+                        offer.geolocation,
+                        offer.machine_id,
+                        offer.host_id,
+                        offer.dph_total
                     );
                 }
             };
@@ -70,6 +83,7 @@ impl VastClient {
             .request_offers()
             .await
             .context("Call to request offers")?;
+        // TODO: look for good machines
         let filtered_offers = filter_offers(self.config.clone(), offers);
         Ok(filtered_offers)
     }
@@ -141,10 +155,9 @@ impl VastClient {
             "{}{}/{}/",
             VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
         );
-        let body = format!(
-            r#"{{"template_hash_id": "{}", "label": "magister"}}"#,
-            self.config.template_hash_id
-        );
+        let body = self.new_instance_json_args;
+
+        // TODO: remove this print
         info!("new instance query:\n{url} body: {body}");
         let response = self
             .client
