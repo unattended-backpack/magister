@@ -184,8 +184,8 @@ impl VastClient {
         // Note: we have to pass the offer_id because we don't know the instance_id until after we
         // accept the offer
         let env = format!(
-            r#"{{"MAGISTER": "{{ magister_addr = "{}", instance_id = {offer_id} }}}}" "#,
-            self.config.this_magister_addr
+            r#"{{"MAGISTER": "{{ magister_addr = "{}:{}", instance_id = {offer_id} }}}}" "#,
+            self.config.this_magister_addr, self.config.http_port
         );
         // unfortunately these all have to be passed in as null
         let body = format!(
