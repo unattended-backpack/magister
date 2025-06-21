@@ -8,7 +8,8 @@ use crate::{
     },
 };
 use anyhow::{Context, Result, anyhow};
-use log::{debug, info, warn};
+use axum::http::StatusCode;
+use log::{debug, error, info, warn};
 
 pub struct VastClient {
     config: Config,
@@ -21,37 +22,59 @@ impl VastClient {
         Self { config, client }
     }
 
-    pub async fn create_instances(&self, count: usize) -> Result<Vec<(u64, VastInstance)>> {
-        if count == 0 {
-            return Ok(Vec::new());
-        }
-        info!("Requesting {count} new instances");
-
-        let mut instances = Vec::new();
+    pub async fn create_initial_instances(&self, count: usize) -> Result<Vec<(u64, VastInstance)>> {
         let offers = self.find_offers().await?;
-        if offers.len() == 0 {
-            warn!("Query returned 0 offers.");
-        } else if offers.len() < count {
-            warn!(
-                "Query only returned {} offers but {} instances were requested.  Try restarting with a less strict query parameters to return more results",
+
+        if offers.len() < count {
+            let err = format!(
+                "Only found {} offers but {} instances were requested. Restart with a less restrictive query.",
                 offers.len(),
                 count
             );
-        } else {
-            info!("Query returned {} offers", offers.len());
+            error!("{err}");
+            return Err(anyhow!(err));
         }
 
-        for offer in offers {
-            tokio::time::sleep(Duration::from_secs(self.config.vast_api_call_delay_secs)).await;
+        let mut new_instances = Vec::new();
+        let mut i = 0;
+        let backoff = self.config.vast_api_call_backoff_secs;
+        let mut current_sleep_duration = backoff;
+        let mut last_run_rate_limited = false;
+        while new_instances.len() != count {
+            let offer = match offers.get(i) {
+                Some(o) => o,
+                None => {
+                    return Err(anyhow!(
+                        "Ran out of offers.  Try a less restrictive query or try again later."
+                    ));
+                }
+            };
             let offer_id = offer.id;
 
             match self.request_new_instance(offer_id).await {
-                Ok(instance_id) => {
-                    let new_instance = VastInstance::new(instance_id, offer);
+                Ok(Some(instance_id)) => {
+                    last_run_rate_limited = false;
+                    let new_instance = VastInstance::new(instance_id, offer.clone());
                     info!("Accepted offer {offer_id} for {new_instance}");
-                    instances.push((instance_id, new_instance));
+                    new_instances.push((instance_id, new_instance));
+                }
+                Ok(None) => {
+                    if last_run_rate_limited {
+                        current_sleep_duration += backoff;
+                    } else {
+                        current_sleep_duration = backoff;
+                    }
+                    last_run_rate_limited = true;
+                    warn!(
+                        "Reached vast rate limit.  Sleeping for {} seconds then trying again",
+                        current_sleep_duration
+                    );
+                    tokio::time::sleep(Duration::from_secs(current_sleep_duration)).await;
+                    // loop without incrementing i to attempt this machine again
+                    continue;
                 }
                 Err(e) => {
+                    last_run_rate_limited = false;
                     warn!(
                         "Unable to request offer {offer_id} of a {} in {} with machine_id {} and host_id {} for ${:.2}/hour.\nError: {e}",
                         offer.gpu_name,
@@ -61,14 +84,12 @@ impl VastClient {
                         offer.dph_total
                     );
                 }
-            };
-
-            if instances.len() == count {
-                break;
             }
+
+            i += 1;
         }
 
-        Ok(instances)
+        Ok(new_instances)
     }
 
     pub async fn drop_instance(&self, instance_id: u64) -> Result<()> {
@@ -80,12 +101,11 @@ impl VastClient {
             .request_offers()
             .await
             .context("Call to request offers")?;
-        // TODO: look for good machines
         let filtered_offers = filter_offers(self.config.clone(), offers);
+        info!("found {} offers", filtered_offers.len());
         Ok(filtered_offers)
     }
 
-    // TODO: retry logic
     async fn request_destroy_instance(&self, instance_id: u64) -> Result<()> {
         let url = format!(
             "{}{}/{}/",
@@ -115,7 +135,6 @@ impl VastClient {
         }
     }
 
-    // TODO: retry logic
     async fn request_offers(&self) -> Result<Vec<Offer>> {
         let query = self.config.vast_query.to_query_string();
         let url = format!("{}{}/?q={}", VAST_BASE_URL, VAST_OFFERS_ENDPOINT, query);
@@ -130,10 +149,19 @@ impl VastClient {
                 format!("Bearer {}", self.config.vast_api_key),
             )
             .send()
-            .await?;
+            .await
+            .context("Reqwest call to get vast offers")?;
 
         if response.status().is_success() {
-            let vast_response: VastOfferResponse = response.json().await?;
+            let vast_response: VastOfferResponse = match response.json().await {
+                Ok(x) => x,
+                Err(e) => {
+                    let err =
+                        format!("Error parsing vast response from offer request as json: {e}");
+                    error!("{err}");
+                    return Err(anyhow!(err));
+                }
+            };
             debug!("Found {} offers", vast_response.offers.len());
             Ok(vast_response.offers)
         } else {
@@ -146,8 +174,8 @@ impl VastClient {
     }
 
     // returns instance_id of the offer on a success
-    // TODO: retry logic
-    async fn request_new_instance(&self, offer_id: u64) -> Result<u64> {
+    // if Ok(None), then we are making too many requests and need to wait
+    pub async fn request_new_instance(&self, offer_id: u64) -> Result<Option<u64>> {
         let url = format!(
             "{}{}/{}/",
             VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
@@ -188,12 +216,14 @@ impl VastClient {
             .await?;
         if response.status().is_success() {
             let resp: VastCreateInstanceResponse = response.json().await?;
-            Ok(resp.new_contract)
+            Ok(Some(resp.new_contract))
+        } else if response.status() == StatusCode::TOO_MANY_REQUESTS {
+            Ok(None)
         } else {
             let status = response.status();
             let error_text = response.text().await?;
             Err(anyhow!(
-                "API request for {url} with body {body} failed with status {status}: {error_text}"
+                "API request for {url} failed with status {status}: {error_text}"
             ))
         }
     }

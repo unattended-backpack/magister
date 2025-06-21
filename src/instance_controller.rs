@@ -2,7 +2,7 @@ use crate::{config::Config, types::VastInstance, vast::VastClient};
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
 use log::{debug, error, info, warn};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tokio::{
     sync::{mpsc, oneshot},
     time::{Duration, Instant, interval},
@@ -60,7 +60,6 @@ impl InstanceControllerClient {
 pub struct InstanceController {
     // mapping instance_id -> instance
     instances: HashMap<u64, VastInstance>,
-    instances_to_drop: HashSet<u64>,
     vast_client: VastClient,
     receiver: mpsc::Receiver<InstanceControllerCommand>,
     config: Config,
@@ -77,11 +76,10 @@ impl InstanceController {
         info!("Creating initial {desired_instances} instances.  Please wait...");
         let start = Instant::now();
         let instances = vast_client
-            .create_instances(desired_instances)
+            .create_initial_instances(desired_instances)
             .await
             .context("Initial instance creation")?;
         let instances = instances.into_iter().collect();
-        let instances_to_drop = HashSet::new();
 
         let elapsed = start.elapsed().as_secs_f32();
         info!(
@@ -91,7 +89,6 @@ impl InstanceController {
 
         Ok(Self {
             instances,
-            instances_to_drop,
             vast_client,
             receiver,
             config,
@@ -122,47 +119,30 @@ impl InstanceController {
         while let Some(command) = self.receiver.recv().await {
             match command {
                 InstanceControllerCommand::HandleUnfinishedBusiness => {
-                    let mut instances_still_not_dropped = HashSet::new();
+                    let mut instances_dropped = Vec::new();
 
-                    for instance_id in &self.instances_to_drop {
-                        // TODO: can remove this when we're sure the logic is fine
-                        if let None = self.instances.get(&instance_id) {
-                            info!("Instances: {:?}", self.instances);
-                            info!("Instances to drop: {:?}", self.instances_to_drop);
-                            panic!(
-                                "id {instance_id} exists in instances_to_drop but not master instance list. Check logic"
-                            );
+                    let instances_clone = self.instances.clone();
+                    for (instance_id, instance) in instances_clone {
+                        // if we shouldn't drop this instance, skip
+                        if !instance.should_drop {
+                            continue;
                         }
 
                         match self.vast_client.drop_instance(instance_id.clone()).await {
                             Ok(_) => {
-                                // if it was dropped successfully, remove it from the list of instances
-                                match self.instances.remove(&instance_id) {
-                                    None => {
-                                        warn!(
-                                            "Dropped instance_id {instance_id} but it wasn't known to this magister"
-                                        );
-                                    }
-                                    Some(instance) => {
-                                        info!("Dropped {instance}");
-                                    }
-                                }
+                                info!("Dropped {instance}");
+                                instances_dropped.push(instance_id);
                             }
                             Err(e) => {
                                 warn!(
-                                    "Error on attempt to drop {instance_id}.  Will try again later. {e}"
+                                    "Error on attempt to drop {instance}.  Will try again later. {e}"
                                 );
-                                instances_still_not_dropped.insert(instance_id.clone());
                             }
                         }
-
-                        tokio::time::sleep(Duration::from_secs(
-                            self.config.vast_api_call_delay_secs,
-                        ))
-                        .await;
                     }
 
-                    self.instances_to_drop = instances_still_not_dropped;
+                    self.instances
+                        .retain(|instance_id, _| !instances_dropped.contains(&instance_id));
 
                     self.ensure_sufficient_instances().await;
                 }
@@ -170,10 +150,10 @@ impl InstanceController {
                     instance_id,
                     resp_sender,
                 } => {
-                    let resp = match self.instances.get(&instance_id) {
-                        Some(_) => {
+                    let resp = match self.instances.get_mut(&instance_id) {
+                        Some(instance) => {
                             debug!("Marking {instance_id} to be dropped");
-                            self.instances_to_drop.insert(instance_id);
+                            instance.should_drop = true;
                             Ok(format!("{instance_id} will be dropped"))
                         }
                         None => {
@@ -206,23 +186,50 @@ impl InstanceController {
         if self.instances.len() < self.config.number_instances {
             let required_instances = self.config.number_instances - self.instances.len();
             info!(
-                "Currently at {} / {} instances",
+                "Currently at {} / {} instances.  Requesting more...",
                 self.instances.len(),
                 self.config.number_instances
             );
 
-            let new_instances = match self
-                .vast_client
-                .create_instances(required_instances)
-                .await
-                .context("Request missing instances")
-            {
-                Ok(x) => x,
+            let offers = match self.vast_client.find_offers().await {
+                Ok(offers) => offers,
                 Err(e) => {
-                    warn!("Error creating {required_instances} new instances: {e}");
+                    warn!(
+                        "Error finding offers to request new instances.  Will try again later\n{e}"
+                    );
                     return;
                 }
             };
+
+            let mut new_instances = Vec::new();
+            for offer in offers {
+                let offer_id = offer.id;
+                match self.vast_client.request_new_instance(offer_id).await {
+                    Ok(Some(instance_id)) => {
+                        let new_instance = VastInstance::new(instance_id, offer);
+                        info!("Accepted offer {offer_id} for {new_instance}");
+                        new_instances.push((instance_id, new_instance));
+                    }
+                    Ok(None) => {
+                        warn!("Reached Vast rate limit.  Will try to request more instances later");
+                        break;
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Unable to request offer {offer_id} of a {} in {} with machine_id {} and host_id {} for ${:.2}/hour.\nError: {e}",
+                            offer.gpu_name,
+                            offer.geolocation,
+                            offer.machine_id,
+                            offer.host_id,
+                            offer.dph_total
+                        );
+                    }
+                }
+
+                if new_instances.len() == required_instances {
+                    break;
+                }
+            }
 
             for (new_instance_id, new_instance) in new_instances {
                 if let Some(old_instance) =

@@ -8,13 +8,14 @@ use axum::{
 use log::{error, info};
 use std::sync::Arc;
 
-use crate::types::{MagisterState, VastInstance};
+use crate::types::{MagisterState, SummaryResponse, VastInstance};
 
 pub fn create_router(state: Arc<MagisterState>) -> Router {
     Router::new()
         .route("/hello", get(hello_world))
         .route("/drop/:id", delete(drop))
         .route("/instances", get(instances))
+        .route("/summary", get(summary))
         .with_state(state)
 }
 
@@ -32,6 +33,41 @@ async fn instances(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+async fn summary(
+    State(state): State<Arc<MagisterState>>,
+) -> Result<axum::Json<SummaryResponse>, StatusCode> {
+    let mut instances = match state.instance_controller_client.instances().await {
+        Ok(instances) => instances,
+        Err(e) => {
+            error!("Error getting instances: {e}");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // only keep instances that we aren't about to drop
+    instances.retain(|instance| !instance.should_drop);
+
+    let total_dph = instances
+        .iter()
+        .map(|instance| instance.offer.dph_total)
+        .sum();
+
+    let num_instances = instances.len();
+
+    let instance_overview = instances
+        .into_iter()
+        .map(|instance| instance.offer.into())
+        .collect();
+
+    let summary = SummaryResponse {
+        total_cost_per_hour: total_dph,
+        num_instances,
+        instance_overview,
+    };
+
+    Ok(axum::Json(summary))
 }
 
 async fn drop(

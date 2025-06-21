@@ -30,20 +30,21 @@ pub struct VastCreateInstanceResponse {
     pub new_contract: u64,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct VastOfferResponse {
-    pub offers: Vec<Offer>,
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub struct VastInstance {
     pub offer: Offer,
     pub instance_id: u64,
+    pub should_drop: bool,
 }
 
 impl VastInstance {
     pub fn new(instance_id: u64, offer: Offer) -> Self {
-        Self { instance_id, offer }
+        let should_drop = false;
+        Self {
+            instance_id,
+            offer,
+            should_drop,
+        }
     }
 }
 
@@ -62,6 +63,11 @@ impl fmt::Display for VastInstance {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct VastOfferResponse {
+    pub offers: Vec<Offer>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(dead_code)]
 pub struct Offer {
@@ -76,10 +82,10 @@ pub struct Offer {
     pub bw_nvlink: f64,
     pub compute_cap: u32,
     pub cpu_arch: String,
-    pub cpu_cores: u32,
+    pub cpu_cores: Option<u32>,
     pub cpu_cores_effective: f64,
-    pub cpu_ghz: f64,
-    pub cpu_name: String,
+    pub cpu_ghz: Option<f64>,
+    pub cpu_name: Option<String>,
     pub cpu_ram: u64,
     #[serde(skip_serializing)]
     pub credit_discount_max: f64,
@@ -215,4 +221,34 @@ pub struct CostBreakdown {
     pub discount_total_hour: f64,
     #[serde(rename = "discountedTotalPerHour")]
     pub discounted_total_per_hour: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SummaryResponse {
+    pub total_cost_per_hour: f64,
+    pub num_instances: usize,
+    pub instance_overview: Vec<InstanceOverview>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InstanceOverview {
+    instance_id: u64,
+    gpu: String,
+    location: String,
+    machine_id: u64,
+    host_id: u64,
+    cost_per_hour: f64,
+}
+
+impl From<Offer> for InstanceOverview {
+    fn from(offer: Offer) -> Self {
+        InstanceOverview {
+            instance_id: offer.id,
+            gpu: offer.gpu_name,
+            location: offer.geolocation,
+            machine_id: offer.machine_id,
+            host_id: offer.host_id,
+            cost_per_hour: offer.dph_total,
+        }
+    }
 }
