@@ -180,6 +180,13 @@ impl VastClient {
             "{}{}/{}/",
             VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
         );
+        // This is fucked this is voodoo.  Just ask Joss about it
+        // Note: we have to pass the offer_id because we don't know the instance_id until after we
+        // accept the offer
+        let env = format!(
+            r#"{{"MAGISTER": "{{ magister_addr = "{}", instance_id = {offer_id} }}}}" "#,
+            self.config.this_magister_addr
+        );
         // unfortunately these all have to be passed in as null
         let body = format!(
             r#"{{
@@ -187,7 +194,7 @@ impl VastClient {
             "template_hash_id": "{}",
             "client_id": null,
             "image": null,
-            "env": null,
+            "env": {env},
             "args_str": null,
             "onstart": null,
             "runtype": null,

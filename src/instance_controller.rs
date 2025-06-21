@@ -28,10 +28,10 @@ impl InstanceControllerClient {
         Ok(Self { sender })
     }
 
-    pub async fn drop(&self, instance_id: u64) -> Result<Result<String, StatusCode>> {
+    pub async fn drop(&self, offer_id: u64) -> Result<Result<String, StatusCode>> {
         let (resp_sender, receiver) = oneshot::channel();
         let command = InstanceControllerCommand::Drop {
-            instance_id,
+            offer_id,
             resp_sender,
         };
         self.sender.send(command).await?;
@@ -147,18 +147,28 @@ impl InstanceController {
                     self.ensure_sufficient_instances().await;
                 }
                 InstanceControllerCommand::Drop {
-                    instance_id,
+                    offer_id,
                     resp_sender,
                 } => {
-                    let resp = match self.instances.get_mut(&instance_id) {
-                        Some(instance) => {
-                            debug!("Marking {instance_id} to be dropped");
+                    // TODO: it was late when I wrote this I was tired.  This can be done cleaner
+                    let mut target_instance: Option<u64> = None;
+                    // find the intance based on offer_id
+                    for (instance_id, instance) in self.instances.iter_mut() {
+                        if instance.offer.id == offer_id {
                             instance.should_drop = true;
+                            target_instance = Some(instance_id.clone());
+                            break;
+                        }
+                    }
+
+                    let resp = match target_instance {
+                        Some(instance_id) => {
+                            debug!("Marking {instance_id} to be dropped");
                             Ok(format!("{instance_id} will be dropped"))
                         }
                         None => {
                             warn!(
-                                "Attempted to drop instance_id {instance_id} but it isn't known to this magister.  Skipping request."
+                                "Attempted to drop offer_id {offer_id} but it isn't known to this magister.  Skipping request."
                             );
                             Err(StatusCode::BAD_REQUEST)
                         }
@@ -247,7 +257,7 @@ impl InstanceController {
 #[derive(Debug)]
 pub enum InstanceControllerCommand {
     Drop {
-        instance_id: u64,
+        offer_id: u64,
         resp_sender: oneshot::Sender<Result<String, StatusCode>>,
     },
     GetAll {

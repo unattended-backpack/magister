@@ -5,6 +5,10 @@ use std::fmt::Write;
 pub struct Config {
     #[serde(default = "default_http_port")]
     pub http_port: u16,
+    // the address at which the hierophant can reach this magister to make drop requests.  This
+    // will get passed into the contemplant who will then notify the Hierophant that this is the
+    // contemplant's managing Magister
+    pub this_magister_addr: String,
     pub vast_query: VastQueryConfig,
     pub vast_api_key: String,
     // how many seconds to wait between each vast api call so we don't get rate limited

@@ -75,7 +75,7 @@ async fn drop(
     Path(id): Path<String>,
     body: Option<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let instance_id: u64 = match id.parse() {
+    let offer_id: u64 = match id.parse() {
         Ok(id) => id,
         Err(e) => {
             error!("Error parsing {id} as u64 in drop request: {e}");
@@ -85,14 +85,14 @@ async fn drop(
 
     match body {
         Some(reason) => {
-            info!("Received request to drop {instance_id} with reason: {reason}");
+            info!("Received request to drop instance of offer {offer_id} with reason: {reason}");
         }
         None => {
-            info!("Received request to drop {instance_id}");
+            info!("Received request to drop instance of offer {offer_id}");
         }
     }
 
-    match state.instance_controller_client.drop(instance_id).await {
+    match state.instance_controller_client.drop(offer_id).await {
         Ok(resp) => resp,
         Err(e) => {
             error!("Error getting instances: {e}");
