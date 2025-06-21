@@ -194,7 +194,7 @@ impl VastClient {
             "template_hash_id": "{}",
             "client_id": null,
             "image": null,
-            "env": {env},
+            "env": {},
             "args_str": null,
             "onstart": null,
             "runtype": null,
@@ -206,8 +206,10 @@ impl VastClient {
             "label": "magister",
             "disk": {}
         }}"#,
-            self.config.template_hash, self.config.vast_query.disk_space
+            self.config.template_hash, env, self.config.vast_query.disk_space
         );
+
+        debug!("new instance request body:\n{body}");
 
         let response = self
             .client
