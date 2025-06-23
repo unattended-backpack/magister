@@ -42,6 +42,7 @@ impl VastClient {
         let mut current_sleep_duration = backoff;
         let mut last_run_rate_limited = false;
         while new_instances.len() != count {
+            tokio::time::sleep(Duration::from_secs(1)).await;
             let offer = match offers.get(i) {
                 Some(o) => o,
                 None => {
