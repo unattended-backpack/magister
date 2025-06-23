@@ -150,9 +150,8 @@ impl InstanceController {
                     offer_id,
                     resp_sender,
                 } => {
-                    // TODO: it was late when I wrote this I was tired.  This can be done cleaner
                     let mut target_instance: Option<u64> = None;
-                    // find the intance based on offer_id
+                    // find the instance based on offer_id
                     for (instance_id, instance) in self.instances.iter_mut() {
                         if instance.offer.id == offer_id {
                             instance.should_drop = true;
