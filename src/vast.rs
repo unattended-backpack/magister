@@ -188,12 +188,15 @@ impl VastClient {
             .strip_suffix('/')
             .unwrap_or(&self.config.this_magister_addr);
 
-        // drop endpoint is this magister's address with the offer_id to uniquely identify this
-        // instance.  For example: http://192.4.3.1/drop/24155
-        let extra_env = format!(
-            r#" \"{{\"MAGISTER_DROP_ENDPOINT\": \"{}:{}/drop/{}\" }}\" "#,
+        // this onstart overrides the onstart from the template.  We have to pass in
+        // MAGISTER_DROP_ENDPOINT here instead of the the `extra_env` field because the `extra_env` field
+        // doesn't properly combine envs if the template already has an ENV.
+        let onstart = format!(
+            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\" chmod +x /entrypoint.sh;bash /entrypoint.sh""#,
             this_magister_addr, self.config.http_port, offer_id
         );
+        debug!("onstart command: \n{onstart}");
+
         // unfortunately these all have to be passed in as null
         let body = format!(
             r#"{{
@@ -201,9 +204,9 @@ impl VastClient {
             "template_hash_id": "{}",
             "client_id": null,
             "image": null,
-            "extra_env": {},
+            "extra_env": null,
             "args_str": null,
-            "onstart": null,
+            "onstart": {onstart},
             "runtype": null,
             "image_login": null,
             "use_jupyter_lab": false,
@@ -213,7 +216,7 @@ impl VastClient {
             "label": "magister",
             "disk": {}
         }}"#,
-            self.config.template_hash, extra_env, self.config.vast_query.disk_space
+            self.config.template_hash, self.config.vast_query.disk_space
         );
 
         debug!("New instance request body:\n{body}");
