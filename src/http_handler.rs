@@ -16,11 +16,33 @@ pub fn create_router(state: Arc<MagisterState>) -> Router {
         .route("/drop/:id", delete(drop))
         .route("/instances", get(instances))
         .route("/summary", get(summary))
+        .route("/verify/:id", get(verify))
         .with_state(state)
 }
 
 async fn hello_world() -> impl IntoResponse {
     format!("Hello world!")
+}
+
+async fn verify(
+    State(state): State<Arc<MagisterState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let offer_id: u64 = match id.parse() {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Error parsing {id} as u64 in drop request: {e}");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
+    match state.instance_controller_client.verify(offer_id).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            error!("Error verifying instance: {e}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn instances(

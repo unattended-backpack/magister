@@ -55,6 +55,12 @@ impl InstanceControllerClient {
 
         Ok(instances)
     }
+
+    pub async fn verify(&self, offer_id: u64) -> Result<()> {
+        let command = InstanceControllerCommand::VerifyInstance { offer_id };
+        self.sender.send(command).await?;
+        Ok(())
+    }
 }
 
 pub struct InstanceController {
@@ -121,6 +127,8 @@ impl InstanceController {
                 InstanceControllerCommand::HandleUnfinishedBusiness => {
                     self.correct_active_instance_count().await;
 
+                    self.check_contemplant_verification().await;
+
                     let mut instances_dropped = Vec::new();
 
                     let instances_clone = self.instances.clone();
@@ -186,10 +194,40 @@ impl InstanceController {
                         break;
                     }
                 }
+                InstanceControllerCommand::VerifyInstance { offer_id } => {
+                    for (_, instance) in self.instances.iter_mut() {
+                        if instance.offer.id == offer_id {
+                            debug!("Instance {instance} with offer_id {offer_id} verified!");
+                            instance.contemplant_verified = true;
+                            break;
+                        }
+                    }
+                }
             }
         }
 
         Ok(())
+    }
+
+    async fn check_contemplant_verification(&mut self) {
+        // If we haven't heard the initialization ping from the contemplant within
+        // <contemplant_verification_timeout_secs>, drop the instance
+        for (instance_id, instance) in self.instances.iter_mut() {
+            // if it's not verified
+            if !instance.contemplant_verified {
+                // and it's been longer than contemplant_verification_timeout_secs
+                let time_since_creation = instance.creation_time.elapsed();
+                if time_since_creation
+                    > Duration::from_secs(self.config.contemplant_verification_timeout_secs)
+                {
+                    warn!(
+                        "{instance} with id {instance_id} was created {:.2} seconds ago but hasn't yet been verified.  Dropping.",
+                        time_since_creation.as_secs_f32()
+                    );
+                    instance.should_drop = true;
+                }
+            }
+        }
     }
 
     // compare our instances to the instances Vast is aware of
@@ -297,4 +335,7 @@ pub enum InstanceControllerCommand {
         resp_sender: oneshot::Sender<HashMap<u64, VastInstance>>,
     },
     HandleUnfinishedBusiness,
+    VerifyInstance {
+        offer_id: u64,
+    },
 }

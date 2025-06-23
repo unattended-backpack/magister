@@ -16,6 +16,10 @@ pub struct Config {
     pub vast_api_call_backoff_secs: u64,
     #[serde(default = "default_task_polling_interval_secs")]
     pub task_polling_interval_secs: u64,
+    // How long to wait for verification from the contemplant before dropping this instance.
+    // Contemplant verification happens on startup
+    #[serde(default = "default_contemplant_verification_timeout_secs")]
+    pub contemplant_verification_timeout_secs: u64,
     // Id of the template that magister will be making instances of.
     // Find the id at the Vast.ai web console
     pub template_hash: String,
@@ -27,6 +31,10 @@ pub struct Config {
     // Will prioritize a machine if its in good_hosts OR good_machines
     pub good_hosts: Option<Vec<u64>>,
     pub good_machines: Option<Vec<u64>>,
+}
+
+fn default_contemplant_verification_timeout_secs() -> u64 {
+    180
 }
 
 fn vast_api_call_backoff_secs() -> u64 {

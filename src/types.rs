@@ -2,6 +2,7 @@ use crate::instance_controller::InstanceControllerClient;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use tokio::time::Instant;
 
 use crate::config::Config;
 
@@ -46,15 +47,23 @@ pub struct VastInstance {
     pub offer: Offer,
     pub instance_id: u64,
     pub should_drop: bool,
+    #[serde(skip_serializing)]
+    pub contemplant_verified: bool,
+    #[serde(skip_serializing)]
+    pub creation_time: Instant,
 }
 
 impl VastInstance {
     pub fn new(instance_id: u64, offer: Offer) -> Self {
         let should_drop = false;
+        let creation_time = Instant::now();
+        let contemplant_verified = false;
         Self {
             instance_id,
             offer,
             should_drop,
+            creation_time,
+            contemplant_verified,
         }
     }
 }
