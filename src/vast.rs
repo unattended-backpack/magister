@@ -3,8 +3,9 @@ use std::time::Duration;
 use crate::{
     config::Config,
     types::{
-        Offer, VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, VAST_DELETE_INSTANCE_ENDPOINT,
-        VAST_OFFERS_ENDPOINT, VastCreateInstanceResponse, VastInstance, VastOfferResponse,
+        Offer, VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, VAST_INSTANCE_ENDPOINT,
+        VAST_OFFERS_ENDPOINT, VastCreateInstanceResponse, VastGetInstancesResponse, VastInstance,
+        VastOfferResponse,
     },
 };
 use anyhow::{Context, Result, anyhow};
@@ -109,7 +110,7 @@ impl VastClient {
     async fn request_destroy_instance(&self, instance_id: u64) -> Result<()> {
         let url = format!(
             "{}{}/{}/",
-            VAST_BASE_URL, VAST_DELETE_INSTANCE_ENDPOINT, instance_id
+            VAST_BASE_URL, VAST_INSTANCE_ENDPOINT, instance_id
         );
 
         let response = self
@@ -164,6 +165,44 @@ impl VastClient {
             };
             debug!("Found {} offers", vast_response.offers.len());
             Ok(vast_response.offers)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await?;
+            Err(anyhow!(
+                "API request for {url} failed with status {status}: {error_text}"
+            ))
+        }
+    }
+
+    // returns ids of instances according to vast
+    pub async fn get_instances(&self) -> Result<Vec<u64>> {
+        let url = format!("{}{}/", VAST_BASE_URL, VAST_INSTANCE_ENDPOINT);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.vast_api_key),
+            )
+            .send()
+            .await
+            .context("Reqwest call to get vast instances")?;
+
+        if response.status().is_success() {
+            let vast_response: VastGetInstancesResponse = match response.json().await {
+                Ok(x) => x,
+                Err(e) => {
+                    let err =
+                        format!("Error parsing vast response from get instances as json: {e}");
+                    error!("{err}");
+                    return Err(anyhow!(err));
+                }
+            };
+            let instance_ids = vast_response.instances.iter().map(|i| i.id).collect();
+            Ok(instance_ids)
         } else {
             let status = response.status();
             let error_text = response.text().await?;

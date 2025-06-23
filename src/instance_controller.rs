@@ -2,7 +2,7 @@ use crate::{config::Config, types::VastInstance, vast::VastClient};
 use anyhow::{Context, Result};
 use axum::http::StatusCode;
 use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::{
     sync::{mpsc, oneshot},
     time::{Duration, Instant, interval},
@@ -119,6 +119,8 @@ impl InstanceController {
         while let Some(command) = self.receiver.recv().await {
             match command {
                 InstanceControllerCommand::HandleUnfinishedBusiness => {
+                    self.correct_active_instance_count().await;
+
                     let mut instances_dropped = Vec::new();
 
                     let instances_clone = self.instances.clone();
@@ -190,6 +192,36 @@ impl InstanceController {
         Ok(())
     }
 
+    // compare our instances to the instances Vast is aware of
+    async fn correct_active_instance_count(&mut self) {
+        let returned_instance_ids: HashSet<u64> = match self.vast_client.get_instances().await {
+            Ok(x) => x.into_iter().collect(),
+            Err(e) => {
+                warn!("Error sending command to get updated instance count: {e}");
+                return;
+            }
+        };
+
+        let mut zombie_instances = Vec::new();
+        // This could return instances that are running that aren't for Magister.  Vast doesn't let
+        // us query by label, so we can only use this to remove instance ids that we have running
+        // but aren't returned by the above api call
+        for (instance_id, instance) in self.instances.clone() {
+            // We have an instance that vast isn't aware of.  This means the instance was removed
+            // via the vast Frontend, and we should remove this from our state.  It doesn't need to
+            // be dropped because it already doesn't exist in vast
+            if let None = returned_instance_ids.get(&instance_id) {
+                info!(
+                    "Instance id {instance_id} {instance} was dropped by somone via the Vast.ai frontend.  Removing it from Magister state."
+                );
+                zombie_instances.push(instance_id);
+            }
+        }
+
+        // only retain instances that aren't in the list of zombie_instances
+        self.instances
+            .retain(|instance_id, _| !zombie_instances.contains(&instance_id));
+    }
     // requests new instances if we're below config.number_instances
     async fn ensure_sufficient_instances(&mut self) {
         if self.instances.len() < self.config.number_instances {

@@ -8,7 +8,7 @@ use crate::config::Config;
 pub const VAST_BASE_URL: &str = "https://console.vast.ai/api/v0";
 pub const VAST_OFFERS_ENDPOINT: &str = "/bundles";
 pub const VAST_CREATE_INSTANCE_ENDPOINT: &str = "/asks";
-pub const VAST_DELETE_INSTANCE_ENDPOINT: &str = "/instances";
+pub const VAST_INSTANCE_ENDPOINT: &str = "/instances";
 
 #[derive(Clone)]
 pub struct MagisterState {
@@ -28,6 +28,19 @@ impl MagisterState {
 pub struct VastCreateInstanceResponse {
     pub success: bool,
     pub new_contract: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct VastGetInstancesResponse {
+    pub instances: Vec<VastResponseInstance>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct VastResponseInstance {
+    pub id: u64,
+    pub start_date: u64,
+    pub duration: u64,
+    pub extra_env: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
