@@ -197,7 +197,9 @@ impl InstanceController {
         let returned_instance_ids: HashSet<u64> = match self.vast_client.get_instances().await {
             Ok(x) => x.into_iter().collect(),
             Err(e) => {
-                warn!("Error sending command to get updated instance count: {e}");
+                warn!(
+                    "Error sending command to get updated instance count: {e}.  Will try again later."
+                );
                 return;
             }
         };

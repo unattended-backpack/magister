@@ -32,15 +32,13 @@ pub struct VastCreateInstanceResponse {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct VastGetInstancesResponse {
+    pub instances_found: u64,
     pub instances: Vec<VastResponseInstance>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct VastResponseInstance {
     pub id: u64,
-    pub start_date: u64,
-    pub duration: u64,
-    pub extra_env: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
