@@ -80,7 +80,7 @@ async fn summary(
 
     let instance_overview = instances
         .into_iter()
-        .map(|instance| instance.offer.into())
+        .map(|instance| instance.into())
         .collect();
 
     let summary = SummaryResponse {

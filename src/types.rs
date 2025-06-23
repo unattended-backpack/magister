@@ -253,6 +253,7 @@ pub struct SummaryResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InstanceOverview {
     instance_id: u64,
+    offer_id: u64,
     gpu: String,
     location: String,
     machine_id: u64,
@@ -260,15 +261,16 @@ pub struct InstanceOverview {
     cost_per_hour: f64,
 }
 
-impl From<Offer> for InstanceOverview {
-    fn from(offer: Offer) -> Self {
+impl From<VastInstance> for InstanceOverview {
+    fn from(instance: VastInstance) -> Self {
         InstanceOverview {
-            instance_id: offer.id,
-            gpu: offer.gpu_name,
-            location: offer.geolocation,
-            machine_id: offer.machine_id,
-            host_id: offer.host_id,
-            cost_per_hour: offer.dph_total,
+            instance_id: instance.instance_id,
+            offer_id: instance.offer.id,
+            gpu: instance.offer.gpu_name,
+            location: instance.offer.geolocation,
+            machine_id: instance.offer.machine_id,
+            host_id: instance.offer.host_id,
+            cost_per_hour: instance.offer.dph_total,
         }
     }
 }
