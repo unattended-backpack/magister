@@ -180,12 +180,19 @@ impl VastClient {
             "{}{}/{}/",
             VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
         );
-        // This is fucked this is voodoo.  Just ask Joss about it
-        // Note: we have to pass the offer_id because we don't know the instance_id until after we
-        // accept the offer
-        let env = format!(
-            r#""{{\"MAGISTER\": \"{{ magister_addr = \"{}:{}\", instance_id = {offer_id}}}}}""#,
-            self.config.this_magister_addr, self.config.http_port
+
+        // remove a trailing / if it exists on the address
+        let this_magister_addr = self
+            .config
+            .this_magister_addr
+            .strip_suffix('/')
+            .unwrap_or(&self.config.this_magister_addr);
+
+        // drop endpoint is this magister's address with the offer_id to uniquely identify this
+        // instance.  For example: http://192.4.3.1/drop/24155
+        let extra_env = format!(
+            r#" {{\"MAGISTER_DROP_ENDPOINT\": \"{}:{}/drop/{}\" }} "#,
+            this_magister_addr, self.config.http_port, offer_id
         );
         // unfortunately these all have to be passed in as null
         let body = format!(
@@ -194,7 +201,7 @@ impl VastClient {
             "template_hash_id": "{}",
             "client_id": null,
             "image": null,
-            "env": {},
+            "extra_env": {},
             "args_str": null,
             "onstart": null,
             "runtype": null,
@@ -206,10 +213,10 @@ impl VastClient {
             "label": "magister",
             "disk": {}
         }}"#,
-            self.config.template_hash, env, self.config.vast_query.disk_space
+            self.config.template_hash, extra_env, self.config.vast_query.disk_space
         );
 
-        debug!("new instance request body:\n{body}");
+        debug!("New instance request body:\n{body}");
 
         let response = self
             .client
