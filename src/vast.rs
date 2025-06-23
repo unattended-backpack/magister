@@ -191,7 +191,7 @@ impl VastClient {
         // drop endpoint is this magister's address with the offer_id to uniquely identify this
         // instance.  For example: http://192.4.3.1/drop/24155
         let extra_env = format!(
-            r#" {{\"MAGISTER_DROP_ENDPOINT\": \"{}:{}/drop/{}\" }} "#,
+            r#" \"{{\"MAGISTER_DROP_ENDPOINT\": \"{}:{}/drop/{}\" }}\" "#,
             this_magister_addr, self.config.http_port, offer_id
         );
         // unfortunately these all have to be passed in as null
