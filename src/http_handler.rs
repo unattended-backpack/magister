@@ -12,16 +12,11 @@ use crate::types::{MagisterState, SummaryResponse, VastInstance};
 
 pub fn create_router(state: Arc<MagisterState>) -> Router {
     Router::new()
-        .route("/hello", get(hello_world))
         .route("/drop/:id", delete(drop))
         .route("/instances", get(instances))
         .route("/summary", get(summary))
         .route("/verify/:id", get(verify))
         .with_state(state)
-}
-
-async fn hello_world() -> impl IntoResponse {
-    format!("Hello world!")
 }
 
 async fn verify(
