@@ -232,8 +232,12 @@ impl VastClient {
         // MAGISTER_DROP_ENDPOINT here instead of the the `extra_env` field because the `extra_env` field
         // doesn't properly combine envs if the template already has an ENV.
         let onstart = format!(
-            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\" chmod +x /entrypoint.sh;bash /entrypoint.sh""#,
-            this_magister_addr, self.config.http_port, offer_id
+            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\" HIEROPHANT_WS_ADDRESS="ws://{}:{}/ws" chmod +x /entrypoint.sh;bash /entrypoint.sh""#,
+            this_magister_addr,
+            self.config.http_port,
+            offer_id,
+            self.config.hierophant_ip,
+            self.config.hierophant_http_port
         );
         debug!("onstart command: \n{onstart}");
 

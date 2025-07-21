@@ -9,6 +9,11 @@ pub struct Config {
     // will get passed into the contemplant who will then notify the Hierophant that this is the
     // contemplant's managing Magister
     pub this_magister_addr: String,
+    // Passed into Contemplants to tell them which Hierophant to connect to.  Needs to be publically
+    // accessible.
+    pub hierophant_ip: String,
+    // HTTP port the Hierophant (at above ip) is running at.
+    pub hierophant_http_port: u16,
     pub vast_query: VastQueryConfig,
     pub vast_api_key: String,
     // how many seconds to wait between each vast api call so we don't get rate limited
