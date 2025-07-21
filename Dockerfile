@@ -8,7 +8,5 @@ RUN apt-get update && apt-get install -y \
 # Copy the binary from builder
 COPY target/release/magister /usr/local/bin/magister
 
-COPY magister.toml .
-
 ENV RUST_LOG=info RUST_LOG_STYLE=always RUST_BACKTRACE=1
 CMD ["/usr/local/bin/magister"]
