@@ -229,10 +229,10 @@ impl VastClient {
             .unwrap_or(&self.config.this_magister_addr);
 
         // this onstart overrides the onstart from the template.  We have to pass in
-        // MAGISTER_DROP_ENDPOINT here instead of the the `extra_env` field because the `extra_env` field
+        // MAGISTER_DROP_ENDPOINT and HIEROPHANT_WS_ADDRESS here instead of the the `extra_env` field because the `extra_env` field
         // doesn't properly combine envs if the template already has an ENV.
         let onstart = format!(
-            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\" HIEROPHANT_WS_ADDRESS="ws://{}:{}/ws" chmod +x /entrypoint.sh;bash /entrypoint.sh""#,
+            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\"; export HIEROPHANT_WS_ADDRESS=\"ws://{}:{}/ws\"; chmod +x /entrypoint.sh; bash /entrypoint.sh""#,
             this_magister_addr,
             self.config.http_port,
             offer_id,
