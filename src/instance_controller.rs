@@ -46,10 +46,7 @@ impl InstanceControllerClient {
         let command = InstanceControllerCommand::GetAll { resp_sender };
         self.sender.send(command).await?;
 
-        let instances = receiver
-            .await?.values()
-            .cloned()
-            .collect();
+        let instances = receiver.await?.values().cloned().collect();
 
         Ok(instances)
     }
@@ -89,9 +86,7 @@ impl InstanceController {
         let instances = instances.into_iter().collect();
 
         let elapsed = start.elapsed().as_secs_f32();
-        info!(
-            "Created initial {desired_instances} instances in {elapsed:.2} seconds"
-        );
+        info!("Created initial {desired_instances} instances in {elapsed:.2} seconds");
 
         Ok(Self {
             instances,
@@ -115,7 +110,7 @@ impl InstanceController {
                 interval.tick().await;
 
                 let command = InstanceControllerCommand::HandleUnfinishedBusiness;
-                if let Err(_) = sender.send(command).await {
+                if sender.send(command).await.is_err() {
                     error!("Instance controller exited.");
                     break;
                 }
@@ -250,10 +245,10 @@ impl InstanceController {
         // us query by label, so we can only use this to remove instance ids that we have running
         // but aren't returned by the above api call
         for (instance_id, instance) in self.instances.clone() {
-            // We have an instance that vast isn't aware of.  This means the instance was removed
-            // via the vast Frontend, and we should remove this from our state.  It doesn't need to
-            // be dropped because it already doesn't exist in vast
-            if returned_instance_ids.get(&instance_id).is_none() {
+            // if vast.ai didn't return an instance we have locally then the instance was
+            // removed via the vast.ai frontend, not this magister.  We should remove this from our
+            // state.  It doesn't need to be dropped because it already doesn't exist in vast
+            if !returned_instance_ids.contains(&instance_id) {
                 info!(
                     "Instance id {instance_id} {instance} was dropped by somone via the Vast.ai frontend.  Removing it from Magister state."
                 );
