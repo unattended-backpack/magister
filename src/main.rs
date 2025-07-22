@@ -75,7 +75,7 @@ async fn validate_query(config: Config) -> Result<()> {
         .await
         .context("Call find_offers")?;
 
-    if offers.len() == 0 {
+    if offers.is_empty() {
         Err(anyhow!(
             "query returned 0 offers. Query might be incorrectly constructed or too strict"
         ))

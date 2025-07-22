@@ -68,8 +68,7 @@ impl VastClient {
                     }
                     last_run_rate_limited = true;
                     warn!(
-                        "Reached vast rate limit.  Sleeping for {} seconds then trying again",
-                        current_sleep_duration
+                        "Reached vast rate limit.  Sleeping for {current_sleep_duration} seconds then trying again"
                     );
                     tokio::time::sleep(Duration::from_secs(current_sleep_duration)).await;
                     // loop without incrementing i to attempt this machine again
@@ -110,8 +109,7 @@ impl VastClient {
 
     async fn request_destroy_instance(&self, instance_id: u64) -> Result<()> {
         let url = format!(
-            "{}{}/{}/",
-            VAST_BASE_URL, VAST_INSTANCE_ENDPOINT, instance_id
+            "{VAST_BASE_URL}{VAST_INSTANCE_ENDPOINT}/{instance_id}/"
         );
 
         let response = self
@@ -139,7 +137,7 @@ impl VastClient {
 
     async fn request_offers(&self) -> Result<Vec<Offer>> {
         let query = self.config.vast_query.to_query_string();
-        let url = format!("{}{}/?q={}", VAST_BASE_URL, VAST_OFFERS_ENDPOINT, query);
+        let url = format!("{VAST_BASE_URL}{VAST_OFFERS_ENDPOINT}/?q={query}");
 
         let response = self
             .client
@@ -177,7 +175,7 @@ impl VastClient {
 
     // returns ids of instances according to vast
     pub async fn get_instances(&self) -> Result<Vec<u64>> {
-        let url = format!("{}{}/", VAST_BASE_URL, VAST_INSTANCE_ENDPOINT);
+        let url = format!("{VAST_BASE_URL}{VAST_INSTANCE_ENDPOINT}/");
 
         let response = self
             .client
@@ -217,8 +215,7 @@ impl VastClient {
     // if Ok(None), then we are making too many requests and need to wait
     pub async fn request_new_instance(&self, offer_id: u64) -> Result<Option<u64>> {
         let url = format!(
-            "{}{}/{}/",
-            VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
+            "{VAST_BASE_URL}{VAST_CREATE_INSTANCE_ENDPOINT}/{offer_id}/"
         );
 
         // remove a trailing / if it exists on the address
@@ -307,11 +304,11 @@ fn filter_offers(config: Config, offers: Vec<Offer>, last_dropped: u64) -> Vec<O
         .filter(|offer| {
             let host_not_bad = bad_hosts
                 .as_ref()
-                .map_or(true, |bad_list| !bad_list.contains(&offer.host_id));
+                .is_none_or(|bad_list| !bad_list.contains(&offer.host_id));
 
             let machine_not_bad = bad_machines
                 .as_ref()
-                .map_or(true, |bad_list| !bad_list.contains(&offer.machine_id));
+                .is_none_or(|bad_list| !bad_list.contains(&offer.machine_id));
 
             let machine_not_recently_dropped = offer.machine_id != last_dropped;
 
