@@ -46,3 +46,12 @@ curl --request GET --url http://127.0.0.1:8555/summary
 # paste this command on the same machine running Magister
 curl --request GET --url http://127.0.0.1:8555/instances
 ```
+
+## Building docker image
+
+Make sure to build the binary before building the docker image:
+
+```bash
+cargo build --release;
+docker build -t magister .
+```
