@@ -19,6 +19,7 @@ pub fn create_router(state: Arc<MagisterState>) -> Router {
         .with_state(state)
 }
 
+// called by Hierophant to let the Magister know a Contemplant instance successfully initialized
 async fn verify(
     State(state): State<Arc<MagisterState>>,
     Path(id): Path<String>,
@@ -87,6 +88,8 @@ async fn summary(
     Ok(axum::Json(summary))
 }
 
+// called by Hierophant to let the Magister know a Contemplant instance should be deallocated
+// (dropped)
 async fn drop(
     State(state): State<Arc<MagisterState>>,
     Path(id): Path<String>,

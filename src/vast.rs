@@ -24,7 +24,7 @@ impl VastClient {
     }
 
     pub async fn create_initial_instances(&self, count: usize) -> Result<Vec<(u64, VastInstance)>> {
-        let offers = self.find_offers().await?;
+        let offers = self.find_offers(0).await?;
 
         if offers.len() < count {
             let err = format!(
@@ -68,8 +68,7 @@ impl VastClient {
                     }
                     last_run_rate_limited = true;
                     warn!(
-                        "Reached vast rate limit.  Sleeping for {} seconds then trying again",
-                        current_sleep_duration
+                        "Reached vast rate limit.  Sleeping for {current_sleep_duration} seconds then trying again"
                     );
                     tokio::time::sleep(Duration::from_secs(current_sleep_duration)).await;
                     // loop without incrementing i to attempt this machine again
@@ -98,20 +97,19 @@ impl VastClient {
         self.request_destroy_instance(instance_id).await
     }
 
-    pub async fn find_offers(&self) -> Result<Vec<Offer>> {
+    pub async fn find_offers(&self, last_dropped: u64) -> Result<Vec<Offer>> {
         let offers = self
             .request_offers()
             .await
             .context("Call to request offers")?;
-        let filtered_offers = filter_offers(self.config.clone(), offers);
+        let filtered_offers = filter_offers(self.config.clone(), offers, last_dropped);
         info!("found {} offers", filtered_offers.len());
         Ok(filtered_offers)
     }
 
     async fn request_destroy_instance(&self, instance_id: u64) -> Result<()> {
         let url = format!(
-            "{}{}/{}/",
-            VAST_BASE_URL, VAST_INSTANCE_ENDPOINT, instance_id
+            "{VAST_BASE_URL}{VAST_INSTANCE_ENDPOINT}/{instance_id}/"
         );
 
         let response = self
@@ -139,7 +137,7 @@ impl VastClient {
 
     async fn request_offers(&self) -> Result<Vec<Offer>> {
         let query = self.config.vast_query.to_query_string();
-        let url = format!("{}{}/?q={}", VAST_BASE_URL, VAST_OFFERS_ENDPOINT, query);
+        let url = format!("{VAST_BASE_URL}{VAST_OFFERS_ENDPOINT}/?q={query}");
 
         let response = self
             .client
@@ -177,7 +175,7 @@ impl VastClient {
 
     // returns ids of instances according to vast
     pub async fn get_instances(&self) -> Result<Vec<u64>> {
-        let url = format!("{}{}/", VAST_BASE_URL, VAST_INSTANCE_ENDPOINT);
+        let url = format!("{VAST_BASE_URL}{VAST_INSTANCE_ENDPOINT}/");
 
         let response = self
             .client
@@ -217,8 +215,7 @@ impl VastClient {
     // if Ok(None), then we are making too many requests and need to wait
     pub async fn request_new_instance(&self, offer_id: u64) -> Result<Option<u64>> {
         let url = format!(
-            "{}{}/{}/",
-            VAST_BASE_URL, VAST_CREATE_INSTANCE_ENDPOINT, offer_id
+            "{VAST_BASE_URL}{VAST_CREATE_INSTANCE_ENDPOINT}/{offer_id}/"
         );
 
         // remove a trailing / if it exists on the address
@@ -292,7 +289,11 @@ impl VastClient {
     }
 }
 
-fn filter_offers(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
+// TODO: instead of config & last_dropped we should pass a struct that holds all our filtering
+// logic.  It will have some values from config and some that are dynamically updated.
+// This struct should have a function to filter machines based on our criteria in O(n) time.
+// Break out the filter logic into it's own module
+fn filter_offers(config: Config, offers: Vec<Offer>, last_dropped: u64) -> Vec<Offer> {
     let count_before_filter = offers.len();
 
     let bad_hosts = config.bad_hosts;
@@ -301,15 +302,17 @@ fn filter_offers(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
     let offers: Vec<Offer> = offers
         .into_iter()
         .filter(|offer| {
-            let host_ok = bad_hosts
+            let host_not_bad = bad_hosts
                 .as_ref()
-                .map_or(true, |bad_list| !bad_list.contains(&offer.host_id));
+                .is_none_or(|bad_list| !bad_list.contains(&offer.host_id));
 
-            let machine_ok = bad_machines
+            let machine_not_bad = bad_machines
                 .as_ref()
-                .map_or(true, |bad_list| !bad_list.contains(&offer.machine_id));
+                .is_none_or(|bad_list| !bad_list.contains(&offer.machine_id));
 
-            host_ok && machine_ok
+            let machine_not_recently_dropped = offer.machine_id != last_dropped;
+
+            host_not_bad && machine_not_bad && machine_not_recently_dropped
         })
         .collect();
 

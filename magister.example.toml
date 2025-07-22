@@ -1,0 +1,28 @@
+# REQUIRED.  Fill these in with your own
+hierophant_ip = "xyz"
+hierophant_http_port = 1111
+vast_api_key = "abcdefg"
+this_magister_addr = "xyz"
+number_instances = 11
+# Pre-set with a Contemplant template https://github.com/unattended-backpack/hierophant/tree/master/contemplant
+# This template hash will likely be outdated in the future.
+template_hash = "1878058a3fab0d314a768287dc41c456"
+
+# Below are all set with values suitable for Contemplant
+bad_hosts = [213498, 74292, 113132]
+bad_machines = [12217, 19571]
+good_hosts = [207289, 1276]
+good_machines = [13428, 8218]
+
+# Gets turned into the vast query.  See explanations in `src/config.rs`
+# This query works fine for running Contemplant https://github.com/unattended-backpack/hierophant/tree/master/contemplant
+[vast_query]
+allocated_storage = 16
+gpu_name = "RTX 4090"
+reliability = 0.99
+min_cuda_version = 12.8
+gpu_ram = 21
+disk_space = 16
+duration = 192679
+# Max cost per hour
+cost_per_hour = 0.6

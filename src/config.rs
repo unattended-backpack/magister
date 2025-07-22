@@ -70,7 +70,7 @@ pub struct VastQueryConfig {
     pub disk_space: u64,
     // ex: 192679
     pub duration: f64,
-    // In USD ex: 0.53
+    // Max cost per hour in USD ex: 0.53
     pub cost_per_hour: f64,
 }
 

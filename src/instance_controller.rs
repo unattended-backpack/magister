@@ -46,12 +46,7 @@ impl InstanceControllerClient {
         let command = InstanceControllerCommand::GetAll { resp_sender };
         self.sender.send(command).await?;
 
-        let instances = receiver
-            .await?
-            .iter()
-            .map(|(_, instance)| instance)
-            .cloned()
-            .collect();
+        let instances = receiver.await?.values().cloned().collect();
 
         Ok(instances)
     }
@@ -64,8 +59,11 @@ impl InstanceControllerClient {
 }
 
 pub struct InstanceController {
-    // mapping instance_id -> instance
+    // mapping instance_id -> VastInstance
     instances: HashMap<u64, VastInstance>,
+    // Keeps track of the last dropped instance machine_id so it isn't re-requested in the common
+    // scenario where there is only 1 instance.
+    last_dropped: u64,
     vast_client: VastClient,
     receiver: mpsc::Receiver<InstanceControllerCommand>,
     config: Config,
@@ -88,13 +86,11 @@ impl InstanceController {
         let instances = instances.into_iter().collect();
 
         let elapsed = start.elapsed().as_secs_f32();
-        info!(
-            "Created initial {desired_instances} instances in {:.2} seconds",
-            elapsed
-        );
+        info!("Created initial {desired_instances} instances in {elapsed:.2} seconds");
 
         Ok(Self {
             instances,
+            last_dropped: 0,
             vast_client,
             receiver,
             config,
@@ -114,7 +110,7 @@ impl InstanceController {
                 interval.tick().await;
 
                 let command = InstanceControllerCommand::HandleUnfinishedBusiness;
-                if let Err(_) = sender.send(command).await {
+                if sender.send(command).await.is_err() {
                     error!("Instance controller exited.");
                     break;
                 }
@@ -138,7 +134,7 @@ impl InstanceController {
                             continue;
                         }
 
-                        match self.vast_client.drop_instance(instance_id.clone()).await {
+                        match self.vast_client.drop_instance(instance_id).await {
                             Ok(_) => {
                                 info!("Dropped {instance}");
                                 instances_dropped.push(instance_id);
@@ -152,7 +148,7 @@ impl InstanceController {
                     }
 
                     self.instances
-                        .retain(|instance_id, _| !instances_dropped.contains(&instance_id));
+                        .retain(|instance_id, _| !instances_dropped.contains(instance_id));
 
                     self.ensure_sufficient_instances().await;
                 }
@@ -165,7 +161,9 @@ impl InstanceController {
                     for (instance_id, instance) in self.instances.iter_mut() {
                         if instance.offer.id == offer_id {
                             instance.should_drop = true;
-                            target_instance = Some(instance_id.clone());
+                            target_instance = Some(*instance_id);
+                            // This should probably happen after we successfully drop it
+                            self.last_dropped = instance.offer.machine_id;
                             break;
                         }
                     }
@@ -183,13 +181,13 @@ impl InstanceController {
                         }
                     };
 
-                    if let Err(_) = resp_sender.send(resp) {
+                    if resp_sender.send(resp).is_err() {
                         error!("Drop response receiver out of scope.  Exiting");
                         break;
                     }
                 }
                 InstanceControllerCommand::GetAll { resp_sender } => {
-                    if let Err(_) = resp_sender.send(self.instances.clone()) {
+                    if resp_sender.send(self.instances.clone()).is_err() {
                         error!("Get all instances response receiver dropped.  Exiting");
                         break;
                     }
@@ -247,10 +245,10 @@ impl InstanceController {
         // us query by label, so we can only use this to remove instance ids that we have running
         // but aren't returned by the above api call
         for (instance_id, instance) in self.instances.clone() {
-            // We have an instance that vast isn't aware of.  This means the instance was removed
-            // via the vast Frontend, and we should remove this from our state.  It doesn't need to
-            // be dropped because it already doesn't exist in vast
-            if let None = returned_instance_ids.get(&instance_id) {
+            // if vast.ai didn't return an instance we have locally then the instance was
+            // removed via the vast.ai frontend, not this magister.  We should remove this from our
+            // state.  It doesn't need to be dropped because it already doesn't exist in vast
+            if !returned_instance_ids.contains(&instance_id) {
                 info!(
                     "Instance id {instance_id} {instance} was dropped by somone via the Vast.ai frontend.  Removing it from Magister state."
                 );
@@ -260,8 +258,9 @@ impl InstanceController {
 
         // only retain instances that aren't in the list of zombie_instances
         self.instances
-            .retain(|instance_id, _| !zombie_instances.contains(&instance_id));
+            .retain(|instance_id, _| !zombie_instances.contains(instance_id));
     }
+
     // requests new instances if we're below config.number_instances
     async fn ensure_sufficient_instances(&mut self) {
         if self.instances.len() < self.config.number_instances {
@@ -272,7 +271,7 @@ impl InstanceController {
                 self.config.number_instances
             );
 
-            let offers = match self.vast_client.find_offers().await {
+            let offers = match self.vast_client.find_offers(self.last_dropped).await {
                 Ok(offers) => offers,
                 Err(e) => {
                     warn!(

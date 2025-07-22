@@ -71,11 +71,11 @@ async fn validate_query(config: Config) -> Result<()> {
     let vast_client = VastClient::new(config.clone());
     let start = Instant::now();
     let offers = vast_client
-        .find_offers()
+        .find_offers(0)
         .await
         .context("Call find_offers")?;
 
-    if offers.len() == 0 {
+    if offers.is_empty() {
         Err(anyhow!(
             "query returned 0 offers. Query might be incorrectly constructed or too strict"
         ))
