@@ -14,8 +14,6 @@ use vast::VastClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("Hello, world!");
-
     env_logger::init();
 
     let config = tokio::fs::read_to_string("magister.toml")
