@@ -71,7 +71,7 @@ async fn validate_query(config: Config) -> Result<()> {
     let vast_client = VastClient::new(config.clone());
     let start = Instant::now();
     let offers = vast_client
-        .find_offers()
+        .find_offers(0)
         .await
         .context("Call find_offers")?;
 

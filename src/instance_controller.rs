@@ -64,8 +64,11 @@ impl InstanceControllerClient {
 }
 
 pub struct InstanceController {
-    // mapping instance_id -> instance
+    // mapping instance_id -> VastInstance
     instances: HashMap<u64, VastInstance>,
+    // Keeps track of the last dropped instance machine_id so it isn't re-requested in the common
+    // scenario where there is only 1 instance.
+    last_dropped: u64,
     vast_client: VastClient,
     receiver: mpsc::Receiver<InstanceControllerCommand>,
     config: Config,
@@ -95,6 +98,7 @@ impl InstanceController {
 
         Ok(Self {
             instances,
+            last_dropped: 0,
             vast_client,
             receiver,
             config,
@@ -166,6 +170,8 @@ impl InstanceController {
                         if instance.offer.id == offer_id {
                             instance.should_drop = true;
                             target_instance = Some(instance_id.clone());
+                            // This should probably happen after we successfully drop it
+                            self.last_dropped = instance.offer.machine_id;
                             break;
                         }
                     }
@@ -262,6 +268,7 @@ impl InstanceController {
         self.instances
             .retain(|instance_id, _| !zombie_instances.contains(&instance_id));
     }
+
     // requests new instances if we're below config.number_instances
     async fn ensure_sufficient_instances(&mut self) {
         if self.instances.len() < self.config.number_instances {
@@ -272,7 +279,7 @@ impl InstanceController {
                 self.config.number_instances
             );
 
-            let offers = match self.vast_client.find_offers().await {
+            let offers = match self.vast_client.find_offers(self.last_dropped).await {
                 Ok(offers) => offers,
                 Err(e) => {
                     warn!(

@@ -24,7 +24,7 @@ impl VastClient {
     }
 
     pub async fn create_initial_instances(&self, count: usize) -> Result<Vec<(u64, VastInstance)>> {
-        let offers = self.find_offers().await?;
+        let offers = self.find_offers(0).await?;
 
         if offers.len() < count {
             let err = format!(
@@ -98,12 +98,12 @@ impl VastClient {
         self.request_destroy_instance(instance_id).await
     }
 
-    pub async fn find_offers(&self) -> Result<Vec<Offer>> {
+    pub async fn find_offers(&self, last_dropped: u64) -> Result<Vec<Offer>> {
         let offers = self
             .request_offers()
             .await
             .context("Call to request offers")?;
-        let filtered_offers = filter_offers(self.config.clone(), offers);
+        let filtered_offers = filter_offers(self.config.clone(), offers, last_dropped);
         info!("found {} offers", filtered_offers.len());
         Ok(filtered_offers)
     }
@@ -292,7 +292,11 @@ impl VastClient {
     }
 }
 
-fn filter_offers(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
+// TODO: instead of config & last_dropped we should pass a struct that holds all our filtering
+// logic.  It will have some values from config and some that are dynamically updated.
+// This struct should have a function to filter machines based on our criteria in O(n) time.
+// Break out the filter logic into it's own module
+fn filter_offers(config: Config, offers: Vec<Offer>, last_dropped: u64) -> Vec<Offer> {
     let count_before_filter = offers.len();
 
     let bad_hosts = config.bad_hosts;
@@ -301,15 +305,17 @@ fn filter_offers(config: Config, offers: Vec<Offer>) -> Vec<Offer> {
     let offers: Vec<Offer> = offers
         .into_iter()
         .filter(|offer| {
-            let host_ok = bad_hosts
+            let host_not_bad = bad_hosts
                 .as_ref()
                 .map_or(true, |bad_list| !bad_list.contains(&offer.host_id));
 
-            let machine_ok = bad_machines
+            let machine_not_bad = bad_machines
                 .as_ref()
                 .map_or(true, |bad_list| !bad_list.contains(&offer.machine_id));
 
-            host_ok && machine_ok
+            let machine_not_recently_dropped = offer.machine_id != last_dropped;
+
+            host_not_bad && machine_not_bad && machine_not_recently_dropped
         })
         .collect();
 
