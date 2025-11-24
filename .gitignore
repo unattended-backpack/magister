@@ -1,2 +1,11 @@
-/target
+# Local secrets and configuration.
+.act-secrets/
+.env
+.env.maintainer.local
 magister.toml
+
+# Build artifacts.
+/target
+/out
+result
+result-*

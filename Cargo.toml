@@ -1,5 +1,7 @@
 [package]
 name = "magister"
+license = "LicenseRef-VPL WITH AGPL-3.0-only"
+authors = ["Joss Duff <jossduff.eth>", "Tim Clancy <tim-clancy.eth>"]
 version = "0.1.0"
 edition = "2024"
 

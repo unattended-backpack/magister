@@ -1,0 +1,58 @@
+# Retrieve a specified image for building.
+ARG BUILD_IMAGE=unattended/petros:latest
+
+# Retrieve a specified image for final container runtime.
+ARG RUNTIME_IMAGE=debian:trixie-slim@sha256:66b37a5078a77098bfc80175fb5eb881a3196809242fd295b25502854e12cbec
+
+# Build from the base image.
+FROM ${BUILD_IMAGE} AS builder
+
+# Build type: "source" (default) or "prebuilt" (CI).
+ARG BUILD_TYPE=source
+
+# Prepare the build image.
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY src/ src/
+
+# Conditionally build from source or use a pre-built binary.
+COPY out/ /build/out/
+RUN if [ "$BUILD_TYPE" = "prebuilt" ]; then \
+  echo "Using pre-built binary from ./out/magister"; \
+  test -f /build/out/magister || (echo "ERROR: BUILD_TYPE=prebuilt but no binary found in ./out/magister" >&2 && exit 1); \
+  cp /build/out/magister /build/magister-binary; \
+else \
+  echo "Building from source ..."; \
+  cargo build --release --bin magister; \
+  cp /build/target/release/magister /build/magister-binary; \
+fi
+
+# Prepare a runtime container.
+FROM ${RUNTIME_IMAGE}
+
+# OCI image labels for metadata and documentation.
+LABEL org.opencontainers.image.title="Magister"
+LABEL org.opencontainers.image.source=https://github.com/unattended-backpack/magister
+LABEL org.opencontainers.image.description="Let all things be done decently and in order. The Magister manages slave instances."
+LABEL org.opencontainers.image.vendor="Unattended Backpack, Inc."
+LABEL org.opencontainers.image.licenses="LicenseRef-VPL WITH AGPL-3.0-only"
+
+# Copy binaries from builder.
+COPY --from=builder /build/magister-binary /usr/local/bin/magister
+
+# Install runtime dependencies and fix binary interpreter.
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+    ca-certificates \
+    patchelf && \
+  patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 /usr/local/bin/magister && \
+  apt-get remove -y patchelf && \
+  apt-get autoremove -y && \
+  rm -rf /var/lib/apt/lists/*
+
+# Prepare specific non-root user for security.
+RUN useradd --system --create-home --shell /bin/bash magister && \
+  chown magister:magister /usr/local/bin/magister
+USER magister
+WORKDIR /home/magister
+ENTRYPOINT ["/usr/local/bin/magister"]

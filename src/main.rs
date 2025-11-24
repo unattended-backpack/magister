@@ -16,11 +16,7 @@ use vast::VastClient;
 async fn main() -> Result<()> {
     env_logger::init();
 
-    let config = tokio::fs::read_to_string("magister.toml")
-        .await
-        .context("read magister.toml file")?;
-
-    let config: Config = toml::de::from_str(&config).context("parse config")?;
+    let config = Config::load("magister.toml").context("load configuration")?;
 
     // validate query.  Exit on query error or 0 (or less than desired instances) results returned
     match validate_query(config.clone()).await {
