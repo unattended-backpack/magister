@@ -3,8 +3,9 @@
 
 # REQUIRED: Publicly accessible address where this Magister can be reached.
 # Used by Hierophant to send drop requests via HTTP.
-# Format: http://[host]:[port] (do not include trailing slash or /drop path)
-this_magister_addr = "http://magister:8555"
+# Format: http://[host] (do not include port, trailing slash, or /drop path)
+# Port is specified separately via http_port configuration.
+this_magister_addr = "http://magister"
 
 # REQUIRED: IP address or hostname where Contemplants can reach Hierophant.
 # Passed to Contemplants when they are created so they know where to connect.
