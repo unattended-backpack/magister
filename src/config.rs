@@ -39,6 +39,9 @@ pub struct Config {
     // Will prioritize a machine if its in good_hosts OR good_machines
     pub good_hosts: Option<Vec<u64>>,
     pub good_machines: Option<Vec<u64>>,
+    // Configuration for Contemplants spawned by this Magister
+    #[serde(default)]
+    pub contemplant: ContemplantConfig,
 }
 
 fn default_contemplant_verification_timeout_secs() -> u64 {
@@ -55,6 +58,103 @@ fn default_task_polling_interval_secs() -> u64 {
 
 fn default_http_port() -> u16 {
     8555
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContemplantConfig {
+    /// Prover type: "cpu" or "cuda" (default: "cpu")
+    #[serde(default = "default_prover_type")]
+    pub prover_type: String,
+    /// Human-readable name for Contemplants (default: generated from names.txt)
+    #[serde(default)]
+    pub contemplant_name: Option<String>,
+    /// Port for HTTP health check server (default: 9011)
+    #[serde(default = "default_contemplant_http_port")]
+    pub http_port: u16,
+    /// Moongate CUDA prover endpoint (default: none)
+    #[serde(default)]
+    pub moongate_endpoint: Option<String>,
+    /// Heartbeat interval in seconds (default: 30)
+    #[serde(default = "default_heartbeat_interval_seconds")]
+    pub heartbeat_interval_seconds: u64,
+    /// Maximum number of finished proofs stored in memory (default: 2)
+    #[serde(default = "default_max_proofs_stored")]
+    pub max_proofs_stored: usize,
+    /// Path to log file for progress tracking (default: "./moongate.log")
+    #[serde(default = "default_moongate_log_path")]
+    pub moongate_log_path: String,
+    /// Log polling interval in milliseconds (default: 2000)
+    #[serde(default = "default_watcher_polling_interval_ms")]
+    pub watcher_polling_interval_ms: u64,
+}
+
+fn default_prover_type() -> String {
+    "cpu".to_string()
+}
+
+fn default_contemplant_http_port() -> u16 {
+    9011
+}
+
+fn default_heartbeat_interval_seconds() -> u64 {
+    30
+}
+
+fn default_max_proofs_stored() -> usize {
+    2
+}
+
+fn default_moongate_log_path() -> String {
+    "./moongate.log".to_string()
+}
+
+fn default_watcher_polling_interval_ms() -> u64 {
+    2000
+}
+
+impl Default for ContemplantConfig {
+    fn default() -> Self {
+        Self {
+            prover_type: default_prover_type(),
+            contemplant_name: None,
+            http_port: default_contemplant_http_port(),
+            moongate_endpoint: None,
+            heartbeat_interval_seconds: default_heartbeat_interval_seconds(),
+            max_proofs_stored: default_max_proofs_stored(),
+            moongate_log_path: default_moongate_log_path(),
+            watcher_polling_interval_ms: default_watcher_polling_interval_ms(),
+        }
+    }
+}
+
+impl ContemplantConfig {
+    /// Generate environment variable exports for the onstart command.
+    /// These will be passed to Contemplants spawned on Vast.ai.
+    pub fn to_env_exports(&self) -> String {
+        let mut exports = Vec::new();
+
+        // Always export prover type
+        exports.push(format!("export PROVER_TYPE=\\\"{}\\\"", self.prover_type));
+
+        // Optional exports
+        if let Some(ref name) = self.contemplant_name {
+            exports.push(format!("export CONTEMPLANT_NAME=\\\"{}\\\"", name));
+        }
+
+        // Always export http_port
+        exports.push(format!("export HTTP_PORT=\\\"{}\\\"", self.http_port));
+
+        if let Some(ref endpoint) = self.moongate_endpoint {
+            exports.push(format!("export MOONGATE_ENDPOINT=\\\"{}\\\"", endpoint));
+        }
+
+        exports.push(format!("export HEARTBEAT_INTERVAL_SECONDS=\\\"{}\\\"", self.heartbeat_interval_seconds));
+        exports.push(format!("export MAX_PROOFS_STORED=\\\"{}\\\"", self.max_proofs_stored));
+        exports.push(format!("export MOONGATE_LOG_PATH=\\\"{}\\\"", self.moongate_log_path));
+        exports.push(format!("export WATCHER_POLLING_INTERVAL_MS=\\\"{}\\\"", self.watcher_polling_interval_ms));
+
+        exports.join("; ")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -144,6 +244,7 @@ impl Config {
                 bad_machines: None,
                 good_hosts: None,
                 good_machines: None,
+                contemplant: ContemplantConfig::default(),
             }
         };
 
@@ -221,6 +322,32 @@ impl Config {
         if let Ok(val) = env::var("GOOD_MACHINES") {
             let machines: Result<Vec<u64>, _> = val.split(',').map(|s| s.trim().parse()).collect();
             config.good_machines = Some(machines.context("GOOD_MACHINES must be comma-separated u64 values")?);
+        }
+
+        // ContemplantConfig overrides
+        if let Ok(val) = env::var("CONTEMPLANT_PROVER_TYPE") {
+            config.contemplant.prover_type = val;
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_NAME") {
+            config.contemplant.contemplant_name = Some(val);
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_HTTP_PORT") {
+            config.contemplant.http_port = val.parse().context("CONTEMPLANT_HTTP_PORT must be a valid u16")?;
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_MOONGATE_ENDPOINT") {
+            config.contemplant.moongate_endpoint = Some(val);
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_HEARTBEAT_INTERVAL_SECONDS") {
+            config.contemplant.heartbeat_interval_seconds = val.parse().context("CONTEMPLANT_HEARTBEAT_INTERVAL_SECONDS must be a valid u64")?;
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_MAX_PROOFS_STORED") {
+            config.contemplant.max_proofs_stored = val.parse().context("CONTEMPLANT_MAX_PROOFS_STORED must be a valid usize")?;
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_MOONGATE_LOG_PATH") {
+            config.contemplant.moongate_log_path = val;
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS") {
+            config.contemplant.watcher_polling_interval_ms = val.parse().context("CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS must be a valid u64")?;
         }
 
         // Validate required fields

@@ -26,7 +26,7 @@ template_hash = "819fdf2e42fc8ceb32f295465b5bb21e"
 
 # REQUIRED: Number of instances to maintain.
 # Magister will continuously monitor and ensure this many instances are running.
-number_instances = 4
+number_instances = 1
 
 # OPTIONAL: HTTP server port (default: 8555).
 # http_port = 8555
@@ -91,3 +91,37 @@ duration = 192679
 # REQUIRED: Maximum cost per hour in USD.
 # Instances costing more than this will be filtered out.
 cost_per_hour = 0.60
+
+# Contemplant configuration controls settings for Contemplants spawned by this Magister.
+# These settings are passed as environment variables to Contemplants on Vast.ai.
+# Note: MAGISTER_DROP_ENDPOINT and HIEROPHANT_WS_ADDRESS are managed automatically.
+[contemplant]
+
+# OPTIONAL: Prover type - "cpu" or "cuda" (default: "cpu").
+# CPU proving is slower but doesn't require GPU-specific setup.
+# prover_type = "cpu"
+
+# OPTIONAL: Human-readable name for Contemplants (default: generated from names.txt).
+# contemplant_name = "paulos"
+
+# OPTIONAL: Port for HTTP health check server (default: 9011).
+# http_port = 9011
+
+# OPTIONAL: Moongate CUDA prover endpoint (default: none).
+# Only used when prover_type is "cuda". If not set, Contemplant will spin up
+# a moongate-server Docker container automatically.
+# moongate_endpoint = "http://localhost:3000/twirp/"
+
+# OPTIONAL: Heartbeat interval in seconds (default: 30).
+# How often Contemplants tell Hierophant they are still alive.
+# heartbeat_interval_seconds = 30
+
+# OPTIONAL: Maximum number of finished proofs stored in memory (default: 2).
+# max_proofs_stored = 2
+
+# OPTIONAL: Path to log file for progress tracking (default: "./moongate.log").
+# moongate_log_path = "./moongate.log"
+
+# OPTIONAL: Log polling interval in milliseconds (default: 2000).
+# How frequently to check the moongate log file for progress updates.
+# watcher_polling_interval_ms = 2000
