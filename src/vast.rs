@@ -137,38 +137,34 @@ impl VastClient {
 
     async fn request_offers(&self) -> Result<Vec<Offer>> {
         let query = self.config.vast_query.to_query_string();
-        let url = format!("{VAST_BASE_URL}{VAST_OFFERS_ENDPOINT}/?q={query}");
+        let url = format!("{VAST_BASE_URL}{VAST_OFFERS_ENDPOINT}/");
 
         let response = self
             .client
-            .get(&url)
+            .post(&url)
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .header(
                 "Authorization",
                 format!("Bearer {}", self.config.vast_api_key),
             )
+            .body(query)
             .send()
             .await
             .context("Reqwest call to get vast offers")?;
 
         if response.status().is_success() {
-            let vast_response: VastOfferResponse = match response.json().await {
-                Ok(x) => x,
-                Err(e) => {
-                    let err =
-                        format!("Error parsing vast response from offer request as json: {e}");
-                    error!("{err}");
-                    return Err(anyhow!(err));
-                }
-            };
+            let vast_response: VastOfferResponse = response
+                .json()
+                .await
+                .context("Failed to parse Vast API response as JSON")?;
             debug!("Found {} offers", vast_response.offers.len());
             Ok(vast_response.offers)
         } else {
             let status = response.status();
             let error_text = response.text().await?;
             Err(anyhow!(
-                "API request for {url} failed with status {status}: {error_text}"
+                "Vast API request failed with status {status}: {error_text}"
             ))
         }
     }
@@ -228,13 +224,15 @@ impl VastClient {
         // this onstart overrides the onstart from the template.  We have to pass in
         // MAGISTER_DROP_ENDPOINT and HIEROPHANT_WS_ADDRESS here instead of the the `extra_env` field because the `extra_env` field
         // doesn't properly combine envs if the template already has an ENV.
+        let contemplant_env = self.config.contemplant.to_env_exports();
         let onstart = format!(
-            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\"; export HIEROPHANT_WS_ADDRESS=\"ws://{}:{}/ws\"; /usr/local/bin/contemplant-entrypoint.sh""#,
+            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\"; export HIEROPHANT_WS_ADDRESS=\"ws://{}:{}/ws\"; {}; /usr/local/bin/contemplant-entrypoint.sh""#,
             this_magister_addr,
             self.config.http_port,
             offer_id,
             self.config.hierophant_ip,
-            self.config.hierophant_http_port
+            self.config.hierophant_http_port,
+            contemplant_env
         );
         debug!("onstart command: \n{onstart}");
 

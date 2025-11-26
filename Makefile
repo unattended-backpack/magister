@@ -15,7 +15,7 @@
 BUILD_IMAGE ?= unattended/petros:latest
 RUNTIME_IMAGE ?= debian:trixie-slim
 DOCKER_BUILD_ARGS ?=
-DOCKER_RUN_ARGS ?=
+DOCKER_RUN_ARGS ?= -e RUST_LOG=info
 MAGISTER_NAME ?= magister
 IMAGE_TAG ?= latest
 ACT_PULL ?= true

@@ -40,7 +40,27 @@ async fn main() -> Result<()> {
     let app = http_handler::create_router(state);
 
     let http_addr: SocketAddr = ([0, 0, 0, 0], config.http_port).into();
-    // Run the HTTP server in a separate task
+
+    // Create a broadcast channel for shutdown signal
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+    let shutdown_tx_clone = shutdown_tx.clone();
+
+    // Spawn a task to listen for ctrl+c and broadcast shutdown
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install CTRL+C signal handler");
+        info!("Received shutdown signal, stopping server...");
+        let _ = shutdown_tx_clone.send(());
+    });
+
+    // Create shutdown signal handler for HTTP server
+    let mut http_shutdown_rx = shutdown_tx.subscribe();
+    let http_shutdown_signal = async move {
+        let _ = http_shutdown_rx.recv().await;
+    };
+
+    // Run the HTTP server with graceful shutdown
     let http_server = tokio::spawn(async move {
         info!("HTTP server starting on {http_addr}");
         axum::serve(
@@ -50,12 +70,16 @@ async fn main() -> Result<()> {
                 .unwrap(),
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
+        .with_graceful_shutdown(http_shutdown_signal)
         .await
         .context("Axum serve on {http_addr}")
         .unwrap();
     });
 
+    info!("Magister started. Press Ctrl+C to stop.");
+
     http_server.await?;
+    info!("HTTP server shutdown complete");
 
     Ok(())
 }
