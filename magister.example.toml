@@ -125,3 +125,11 @@ cost_per_hour = 0.60
 # OPTIONAL: Log polling interval in milliseconds (default: 2000).
 # How frequently to check the moongate log file for progress updates.
 # watcher_polling_interval_ms = 2000
+
+# OPTIONAL: SSH public keys for debugging access (default: none).
+# Allows SSH access to Contemplant instances on port 2222 for debugging.
+# Format: newline-separated SSH public keys.
+# ssh_authorized_keys = """
+# ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAbc123... user@host
+# ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... another@host
+# """

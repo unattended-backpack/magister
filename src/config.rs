@@ -86,6 +86,10 @@ pub struct ContemplantConfig {
     /// Log polling interval in milliseconds (default: 2000)
     #[serde(default = "default_watcher_polling_interval_ms")]
     pub watcher_polling_interval_ms: u64,
+    /// SSH public keys for debugging access (default: none)
+    /// Format: newline-separated SSH public keys
+    #[serde(default)]
+    pub ssh_authorized_keys: Option<String>,
 }
 
 fn default_prover_type() -> String {
@@ -123,6 +127,7 @@ impl Default for ContemplantConfig {
             max_proofs_stored: default_max_proofs_stored(),
             moongate_log_path: default_moongate_log_path(),
             watcher_polling_interval_ms: default_watcher_polling_interval_ms(),
+            ssh_authorized_keys: None,
         }
     }
 }
@@ -152,6 +157,12 @@ impl ContemplantConfig {
         exports.push(format!("export MAX_PROOFS_STORED=\\\"{}\\\"", self.max_proofs_stored));
         exports.push(format!("export MOONGATE_LOG_PATH=\\\"{}\\\"", self.moongate_log_path));
         exports.push(format!("export WATCHER_POLLING_INTERVAL_MS=\\\"{}\\\"", self.watcher_polling_interval_ms));
+
+        if let Some(ref keys) = self.ssh_authorized_keys {
+            // SSH keys can contain newlines, so we need to escape them for the shell
+            let escaped_keys = keys.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+            exports.push(format!("export SSH_AUTHORIZED_KEYS=\\\"{}\\\"", escaped_keys));
+        }
 
         exports.join("; ")
     }
@@ -348,6 +359,9 @@ impl Config {
         }
         if let Ok(val) = env::var("CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS") {
             config.contemplant.watcher_polling_interval_ms = val.parse().context("CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS must be a valid u64")?;
+        }
+        if let Ok(val) = env::var("CONTEMPLANT_SSH_AUTHORIZED_KEYS") {
+            config.contemplant.ssh_authorized_keys = Some(val);
         }
 
         // Validate required fields
