@@ -226,7 +226,7 @@ impl VastClient {
         // doesn't properly combine envs if the template already has an ENV.
         let contemplant_env = self.config.contemplant.to_env_exports();
         let onstart = format!(
-            r#""export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\"; export HIEROPHANT_WS_ADDRESS=\"ws://{}:{}/ws\"; {}; /usr/local/bin/contemplant-entrypoint.sh""#,
+            r#""su - contemplant -c 'export MAGISTER_DROP_ENDPOINT=\"{}:{}/drop/{}\"; export HIEROPHANT_WS_ADDRESS=\"ws://{}:{}/ws\"; {}; /usr/local/bin/contemplant-entrypoint.sh'""#,
             this_magister_addr,
             self.config.http_port,
             offer_id,
