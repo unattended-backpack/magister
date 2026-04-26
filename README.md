@@ -17,6 +17,7 @@ Magister integrates with Hierophant indirectly, using Contemplants as intermedia
 1. Magister creates Contemplant instances and bootstraps them via environment variables constructed from its own configuration.
    - `MAGISTER_DROP_ENDPOINT` is constructed from Magister's `THIS_MAGISTER_ADDR` and `HTTP_PORT` configuration values, combined with the Vast offer ID (`http://magister:8555/drop/12345`).
    - `HIEROPHANT_WS_ADDRESS` is constructed from Magister's `HIEROPHANT_IP` and `HIEROPHANT_HTTP_PORT` configuration values (`ws://hierophant:9010/ws`).
+   - `CONTEMPLANT_VMS` and the matching per-VM backend variables (`CONTEMPLANT_SP1_BACKEND`, `CONTEMPLANT_RISC0_BACKEND`, etc.) are rendered from the `[[contemplant.provers]]` array in `magister.toml`, telling each spawned Contemplant which ZK VM(s) it should serve.
    These environment variables are injected into the Vast instance's `onstart` script, making them available to the Contemplant when it starts.
 2. When a Contemplant starts, it:
    - Connects to its Hierophant via WebSocket.
@@ -129,6 +130,27 @@ All configuration options can be set via environment variables:
 - `GOOD_HOSTS` - Comma-separated list of preferred host IDs
 - `GOOD_MACHINES` - Comma-separated list of preferred machine IDs
 
+**Spawned Contemplant Configuration (REQUIRED):**
+
+A Magister must be told which ZK VM(s) the Contemplants it spawns should serve. The recommended path is a `[[contemplant.provers]]` array in `magister.toml`; alternatively, the env vars below are read when no array is declared:
+
+- `CONTEMPLANT_VMS` - Comma-separated list of VMs to serve. Valid values: `sp1`, `risc0`. Required when no TOML provers are declared.
+- `CONTEMPLANT_SP1_BACKEND` - SP1 backend (`cpu` or `cuda`, default `cpu`).
+- `CONTEMPLANT_RISC0_BACKEND` - RISC Zero backend (`cpu` or `cuda`, default `cpu`).
+- `CONTEMPLANT_RISC0_GROTH16` - Whether the RISC Zero worker accepts onchain Groth16 wrap requests (`true` or `false`, default `false`).
+- `MOONGATE_ENDPOINT` - SP1 CUDA moongate URL (optional, must terminate in `/twirp/`; the Contemplant appends it automatically when missing).
+
+Declaring both `sp1` and `risc0` makes each spawned Contemplant a dual-VM worker: it advertises both VMs to Hierophant and serves either kind of proof as it becomes idle. A single Contemplant only processes one proof at a time regardless of how many VMs it advertises.
+
+**Other Spawned Contemplant Options (optional):**
+- `CONTEMPLANT_NAME` - Human-readable name (default: random from `names.txt`)
+- `CONTEMPLANT_HTTP_PORT` - Health check port on the Vast.ai instance (default: 9011)
+- `CONTEMPLANT_HEARTBEAT_INTERVAL_SECONDS` - How often the Contemplant pings Hierophant (default: 30)
+- `CONTEMPLANT_MAX_PROOFS_STORED` - Finished proofs to keep in memory (default: 2)
+- `CONTEMPLANT_MOONGATE_LOG_PATH` - Where the Contemplant tails moongate logs from (default: `./moongate.log`)
+- `CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS` - Moongate log polling interval (default: 2000)
+- `CONTEMPLANT_SSH_AUTHORIZED_KEYS` - Newline-separated SSH public keys for debugging access on port 2222
+
 ### Example: Environment Variable Only Configuration
 
 ```bash
@@ -141,6 +163,13 @@ export NUMBER_INSTANCES="5"
 export VAST_QUERY_GPU_NAME="RTX 4090"
 export VAST_QUERY_GPU_RAM="24"
 export VAST_QUERY_COST_PER_HOUR="0.53"
+
+# Tell each spawned Contemplant to serve both SP1 and RISC Zero on the GPU,
+# and to accept onchain Groth16 wrap requests for RISC Zero.
+export CONTEMPLANT_VMS="sp1,risc0"
+export CONTEMPLANT_SP1_BACKEND="cuda"
+export CONTEMPLANT_RISC0_BACKEND="cuda"
+export CONTEMPLANT_RISC0_GROTH16="true"
 # ... other configuration ...
 
 RUST_LOG=info cargo run --release
