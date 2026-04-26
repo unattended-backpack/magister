@@ -76,7 +76,7 @@ gpu_name = "RTX 4090"
 reliability = 0.99
 
 # REQUIRED: Minimum CUDA version required.
-min_cuda_version = 12.8
+min_cuda_version = 12.9
 
 # REQUIRED: Minimum GPU RAM in GB.
 gpu_ram = 24
@@ -92,25 +92,19 @@ duration = 192679
 # Instances costing more than this will be filtered out.
 cost_per_hour = 0.60
 
-# Contemplant configuration controls settings for Contemplants spawned by this Magister.
-# These settings are passed as environment variables to Contemplants on Vast.ai.
-# Note: MAGISTER_DROP_ENDPOINT and HIEROPHANT_WS_ADDRESS are managed automatically.
+# Contemplant configuration controls settings for Contemplants spawned by this
+# Magister. These settings are rendered into environment variables on the
+# Vast.ai instance's onstart command, and the Contemplant binary's env-var
+# fallback expands them back into its internal config. Note that
+# MAGISTER_DROP_ENDPOINT and HIEROPHANT_WS_ADDRESS are managed automatically
+# and do not appear here.
 [contemplant]
-
-# OPTIONAL: Prover type - "cpu" or "cuda" (default: "cpu").
-# CPU proving is slower but doesn't require GPU-specific setup.
-# prover_type = "cpu"
 
 # OPTIONAL: Human-readable name for Contemplants (default: generated from names.txt).
 # contemplant_name = "paulos"
 
 # OPTIONAL: Port for HTTP health check server (default: 9011).
 # http_port = 9011
-
-# OPTIONAL: Moongate CUDA prover endpoint (default: none).
-# Only used when prover_type is "cuda". If not set, Contemplant will spin up
-# a moongate-server Docker container automatically.
-# moongate_endpoint = "http://localhost:3000/twirp/"
 
 # OPTIONAL: Heartbeat interval in seconds (default: 30).
 # How often Contemplants tell Hierophant they are still alive.
@@ -133,3 +127,36 @@ cost_per_hour = 0.60
 # ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAbc123... user@host
 # ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... another@host
 # """
+
+# REQUIRED: Declare which ZK VM(s) each spawned Contemplant should serve and
+# with which backend. At least one [[contemplant.provers]] entry is required.
+#
+# Fields:
+#   vm                = "sp1" | "risc0"        (required)
+#   backend           = "cpu" | "cuda"          (default: "cpu")
+#   moongate_endpoint = "http://host:3000/twirp/"  (SP1 CUDA only; optional)
+#   groth16_enabled   = true | false            (RISC Zero only; default: false)
+#
+# A single entry yields a homogeneous pool. Declaring both `sp1` and `risc0`
+# produces a Contemplant that advertises both VMs to Hierophant and serves
+# either kind of proof as it becomes idle (one proof at a time per worker).
+#
+# Examples below show a dual-VM CUDA pool. Comment them out and pick whichever
+# shape fits your Vast.ai pool.
+
+[[contemplant.provers]]
+vm = "sp1"
+backend = "cuda"
+
+# Omit moongate_endpoint to have sp1-sdk spin up a dockerized moongate-server
+# inside the Vast.ai instance. Supply it to point at an external moongate.
+moongate_endpoint = "http://localhost:3000/twirp/"
+
+[[contemplant.provers]]
+vm = "risc0"
+backend = "cuda"
+
+# Set groth16_enabled = true to opt this worker into producing onchain
+# Groth16 wrapped proofs. Requires the Contemplant image to ship the
+# vendored Groth16 prover assets (the released image does).
+groth16_enabled = true
