@@ -22,7 +22,7 @@ vast_api_key = "your-vast-api-key-here"
 # REQUIRED: Vast.ai template hash to use for creating instances.
 # Template should contain a Contemplant image configured to run on startup.
 # Find template hash in the Vast.ai web console under your saved templates.
-template_hash = "819fdf2e42fc8ceb32f295465b5bb21e"
+template_hash = "05227ac1758a9bc85236056c71714618"
 
 # REQUIRED: Number of instances to maintain.
 # Magister will continuously monitor and ensure this many instances are running.
@@ -113,13 +113,6 @@ cost_per_hour = 0.60
 # OPTIONAL: Maximum number of finished proofs stored in memory (default: 2).
 # max_proofs_stored = 2
 
-# OPTIONAL: Path to log file for progress tracking (default: "./moongate.log").
-# moongate_log_path = "./moongate.log"
-
-# OPTIONAL: Log polling interval in milliseconds (default: 2000).
-# How frequently to check the moongate log file for progress updates.
-# watcher_polling_interval_ms = 2000
-
 # OPTIONAL: SSH public keys for debugging access (default: none).
 # Allows SSH access to Contemplant instances on port 2222 for debugging.
 # Format: newline-separated SSH public keys.
@@ -132,25 +125,21 @@ cost_per_hour = 0.60
 # with which backend. At least one [[contemplant.provers]] entry is required.
 #
 # Fields:
-#   vm                = "sp1" | "risc0"        (required)
-#   backend           = "cpu" | "cuda"          (default: "cpu")
-#   moongate_endpoint = "http://host:3000/twirp/"  (SP1 CUDA only; optional)
-#   groth16_enabled   = true | false            (RISC Zero only; default: false)
+#   vm              = "sp1" | "risc0" | "openvm"  (required)
+#   backend         = "cpu" | "cuda"              (default: "cpu")
+#   evm_enabled     = true | false                (OpenVM only; default: false)
+#   groth16_enabled = true | false                (RISC Zero only; default: false)
 #
-# A single entry yields a homogeneous pool. Declaring both `sp1` and `risc0`
-# produces a Contemplant that advertises both VMs to Hierophant and serves
-# either kind of proof as it becomes idle (one proof at a time per worker).
+# A single entry yields a homogeneous pool. Declaring multiple VMs produces a
+# Contemplant that advertises each of them to Hierophant and serves any
+# declared kind of proof as it becomes idle (one proof at a time per worker).
 #
-# Examples below show a dual-VM CUDA pool. Comment them out and pick whichever
+# Examples below show a tri-VM CUDA pool. Comment them out and pick whichever
 # shape fits your Vast.ai pool.
 
 [[contemplant.provers]]
 vm = "sp1"
 backend = "cuda"
-
-# Omit moongate_endpoint to have sp1-sdk spin up a dockerized moongate-server
-# inside the Vast.ai instance. Supply it to point at an external moongate.
-moongate_endpoint = "http://localhost:3000/twirp/"
 
 [[contemplant.provers]]
 vm = "risc0"
@@ -160,3 +149,14 @@ backend = "cuda"
 # Groth16 wrapped proofs. Requires the Contemplant image to ship the
 # vendored Groth16 prover assets (the released image does).
 groth16_enabled = true
+
+[[contemplant.provers]]
+vm = "openvm"
+backend = "cuda"
+
+# Set evm_enabled = true to opt this worker into producing EVM (halo2-wrapped)
+# proofs, OpenVM's onchain-verifiable flavor. Requires the released universal
+# Contemplant image, which ships the baked EVM assets. In the CUDA-featured
+# image, OpenVM stark/evm aggregation always runs on the GPU regardless of
+# the configured backend.
+evm_enabled = true

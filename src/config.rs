@@ -92,6 +92,8 @@ impl std::str::FromStr for ProverBackend {
 pub enum VmChoice {
     Sp1,
     Risc0,
+    #[serde(rename = "openvm")]
+    OpenVm,
 }
 
 impl VmChoice {
@@ -99,6 +101,7 @@ impl VmChoice {
         match self {
             VmChoice::Sp1 => "sp1",
             VmChoice::Risc0 => "risc0",
+            VmChoice::OpenVm => "openvm",
         }
     }
 }
@@ -116,12 +119,14 @@ pub struct ProverConfig {
     pub vm: VmChoice,
     #[serde(default = "default_backend")]
     pub backend: ProverBackend,
-    /// Only meaningful for `vm = "sp1"` with `backend = "cuda"`. URL must
-    /// terminate in `/twirp/`; the Contemplant appends it automatically when
-    /// missing, so either form is accepted. Omit to have sp1-sdk spin up a
-    /// dockerized moongate-server inside the Vast.ai instance.
+    /// Only meaningful for `vm = "openvm"`. Opts the worker into producing
+    /// EVM (halo2-wrapped) proofs, OpenVM's onchain-verifiable flavor.
+    /// Requires the Contemplant image to ship the baked EVM assets, which
+    /// the released universal Contemplant image does. In a CUDA-featured
+    /// image the aggregation stages behind stark/evm modes always run on
+    /// the GPU regardless of `backend`.
     #[serde(default)]
-    pub moongate_endpoint: Option<String>,
+    pub evm_enabled: bool,
     /// Only meaningful for `vm = "risc0"`. Opts the worker into producing
     /// Groth16 wrapped proofs (the onchain-verifiable flavor). Requires the
     /// Contemplant image to ship the vendored Groth16 prover assets, which
@@ -155,12 +160,6 @@ pub struct ContemplantConfig {
     /// Maximum number of finished proofs stored in memory (default: 2)
     #[serde(default = "default_max_proofs_stored")]
     pub max_proofs_stored: usize,
-    /// Path to log file for progress tracking (default: "./moongate.log")
-    #[serde(default = "default_moongate_log_path")]
-    pub moongate_log_path: String,
-    /// Log polling interval in milliseconds (default: 2000)
-    #[serde(default = "default_watcher_polling_interval_ms")]
-    pub watcher_polling_interval_ms: u64,
     /// SSH public keys for debugging access (default: none)
     /// Format: newline-separated SSH public keys
     #[serde(default)]
@@ -179,14 +178,6 @@ fn default_max_proofs_stored() -> usize {
     2
 }
 
-fn default_moongate_log_path() -> String {
-    "./moongate.log".to_string()
-}
-
-fn default_watcher_polling_interval_ms() -> u64 {
-    2000
-}
-
 impl Default for ContemplantConfig {
     fn default() -> Self {
         Self {
@@ -195,8 +186,6 @@ impl Default for ContemplantConfig {
             http_port: default_contemplant_http_port(),
             heartbeat_interval_seconds: default_heartbeat_interval_seconds(),
             max_proofs_stored: default_max_proofs_stored(),
-            moongate_log_path: default_moongate_log_path(),
-            watcher_polling_interval_ms: default_watcher_polling_interval_ms(),
             ssh_authorized_keys: None,
         }
     }
@@ -206,15 +195,16 @@ impl ContemplantConfig {
     /// Generate environment variable exports for the onstart command.
     /// These will be passed to Contemplants spawned on Vast.ai. The
     /// Contemplant's env-var fallback (when no contemplant.toml is mounted)
-    /// reads CONTEMPLANT_VMS, CONTEMPLANT_SP1_BACKEND, CONTEMPLANT_RISC0_BACKEND,
-    /// CONTEMPLANT_RISC0_GROTH16, and MOONGATE_ENDPOINT to reconstruct its
-    /// `provers` array. See hierophant's src/contemplant/src/config.rs.
+    /// reads CONTEMPLANT_VMS plus the per-VM CONTEMPLANT_{SP1,RISC0,OPENVM}_BACKEND
+    /// vars, CONTEMPLANT_RISC0_GROTH16, and CONTEMPLANT_OPENVM_EVM to
+    /// reconstruct its `provers` array. See hierophant's
+    /// src/contemplant/src/config.rs.
     pub fn to_env_exports(&self) -> String {
         let mut exports = Vec::new();
 
         // Per-VM declarations. CONTEMPLANT_VMS lists every VM this worker
         // serves; per-VM backend env vars carry the cpu|cuda choice and (for
-        // SP1) any moongate endpoint or (for RISC Zero) the groth16 toggle.
+        // RISC Zero) the groth16 toggle or (for OpenVM) the EVM toggle.
         if !self.provers.is_empty() {
             let vms = self
                 .provers
@@ -231,11 +221,16 @@ impl ContemplantConfig {
                             "export CONTEMPLANT_SP1_BACKEND=\\\"{}\\\"",
                             prover.backend.as_str()
                         ));
-                        if let Some(ref endpoint) = prover.moongate_endpoint {
-                            exports.push(format!(
-                                "export MOONGATE_ENDPOINT=\\\"{}\\\"",
-                                endpoint
-                            ));
+                    }
+                    VmChoice::OpenVm => {
+                        exports.push(format!(
+                            "export CONTEMPLANT_OPENVM_BACKEND=\\\"{}\\\"",
+                            prover.backend.as_str()
+                        ));
+                        if prover.evm_enabled {
+                            exports.push(
+                                "export CONTEMPLANT_OPENVM_EVM=\\\"true\\\"".to_string(),
+                            );
                         }
                     }
                     VmChoice::Risc0 => {
@@ -263,8 +258,6 @@ impl ContemplantConfig {
 
         exports.push(format!("export HEARTBEAT_INTERVAL_SECONDS=\\\"{}\\\"", self.heartbeat_interval_seconds));
         exports.push(format!("export MAX_PROOFS_STORED=\\\"{}\\\"", self.max_proofs_stored));
-        exports.push(format!("export MOONGATE_LOG_PATH=\\\"{}\\\"", self.moongate_log_path));
-        exports.push(format!("export WATCHER_POLLING_INTERVAL_MS=\\\"{}\\\"", self.watcher_polling_interval_ms));
 
         if let Some(ref keys) = self.ssh_authorized_keys {
             // SSH keys can contain newlines, so we need to escape them for the shell
@@ -462,12 +455,6 @@ impl Config {
         if let Ok(val) = env::var("CONTEMPLANT_MAX_PROOFS_STORED") {
             config.contemplant.max_proofs_stored = val.parse().context("CONTEMPLANT_MAX_PROOFS_STORED must be a valid usize")?;
         }
-        if let Ok(val) = env::var("CONTEMPLANT_MOONGATE_LOG_PATH") {
-            config.contemplant.moongate_log_path = val;
-        }
-        if let Ok(val) = env::var("CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS") {
-            config.contemplant.watcher_polling_interval_ms = val.parse().context("CONTEMPLANT_WATCHER_POLLING_INTERVAL_MS must be a valid u64")?;
-        }
         if let Ok(val) = env::var("CONTEMPLANT_SSH_AUTHORIZED_KEYS") {
             config.contemplant.ssh_authorized_keys = Some(val);
         }
@@ -483,11 +470,30 @@ impl Config {
                                 .transpose()
                                 .context("CONTEMPLANT_SP1_BACKEND must be 'cpu' or 'cuda'")?
                                 .unwrap_or(ProverBackend::Cpu);
-                            let moongate_endpoint = env::var("MOONGATE_ENDPOINT").ok();
                             config.contemplant.provers.push(ProverConfig {
                                 vm: VmChoice::Sp1,
                                 backend,
-                                moongate_endpoint,
+                                evm_enabled: false,
+                                groth16_enabled: false,
+                            });
+                        }
+                        "openvm" => {
+                            let backend = env::var("CONTEMPLANT_OPENVM_BACKEND")
+                                .ok()
+                                .map(|s| ProverBackend::from_str(&s))
+                                .transpose()
+                                .context("CONTEMPLANT_OPENVM_BACKEND must be 'cpu' or 'cuda'")?
+                                .unwrap_or(ProverBackend::Cpu);
+                            let evm_enabled = env::var("CONTEMPLANT_OPENVM_EVM")
+                                .ok()
+                                .map(|s| s.parse::<bool>())
+                                .transpose()
+                                .context("CONTEMPLANT_OPENVM_EVM must be 'true' or 'false'")?
+                                .unwrap_or(false);
+                            config.contemplant.provers.push(ProverConfig {
+                                vm: VmChoice::OpenVm,
+                                backend,
+                                evm_enabled,
                                 groth16_enabled: false,
                             });
                         }
@@ -507,12 +513,12 @@ impl Config {
                             config.contemplant.provers.push(ProverConfig {
                                 vm: VmChoice::Risc0,
                                 backend,
-                                moongate_endpoint: None,
+                                evm_enabled: false,
                                 groth16_enabled,
                             });
                         }
                         other => anyhow::bail!(
-                            "Unknown VM '{other}' in CONTEMPLANT_VMS (expected sp1, risc0)"
+                            "Unknown VM '{other}' in CONTEMPLANT_VMS (expected sp1, risc0, openvm)"
                         ),
                     }
                 }
@@ -565,9 +571,9 @@ impl Config {
         }
         // Sanity-check that fields are paired with their supporting VM.
         for prover in &config.contemplant.provers {
-            if prover.moongate_endpoint.is_some() && !matches!(prover.vm, VmChoice::Sp1) {
+            if prover.evm_enabled && !matches!(prover.vm, VmChoice::OpenVm) {
                 anyhow::bail!(
-                    "moongate_endpoint is only meaningful for vm = \"sp1\"; \
+                    "evm_enabled is only meaningful for vm = \"openvm\"; \
                      saw it on {:?}.",
                     prover.vm
                 );
